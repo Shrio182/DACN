@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# PyTorch checkpoints (lớn, dùng git-lfs nếu cần)
+checkpoints/*.pt
+
+# Data processed and raw (quá lớn để đưa lên GitHub)
+iu_xray_data/
+chest xray data/
+*.dcm.png
+*.png
+*.csv
+
+
+# Logs
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
