@@ -85,3 +85,4 @@ def load_mesh_vocab(load_path: str):
     mesh_classes = data["mesh_classes"]
     mesh_to_idx = {tag: i for i, tag in enumerate(mesh_classes)}
     return mesh_classes, mesh_to_idx
+
