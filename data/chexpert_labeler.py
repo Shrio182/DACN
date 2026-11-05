@@ -1,8 +1,15 @@
 """
 chexpert_labeler.py — Sinh nhãn 14 bệnh (đầu vào cho MLC head) bằng rule-based.
-Lưu ý: đây là bản thay thế đơn giản. Để chính xác như paper, nên chạy công cụ
-chính thức CheXpert Labeler (Stanford) trên báo cáo. Cơ chế: quét keyword,
-xử lý phủ định đơn giản (no/without/clear/normal ... + bệnh = 0).
+
+PHƯƠNG ÁN TRIỂN KHAI THAY THẾ:
+  Paper gốc sử dụng 14 structured labels từ MIMIC-CXR (Bảng I).
+  IU-Xray gốc chỉ có trường MeSH tags (không có 14 nhãn cấu trúc).
+  Ở đây sử dụng CheXpert rule-based labeler áp dụng lên IU-Xray như
+  phương án thay thế — KHÔNG phải cấu hình nhãn được paper xác nhận.
+  Để chính xác hơn, nên chạy CheXpert Labeler chính thức (Stanford)
+  hoặc xây dựng multi-label targets từ trường MeSH của IU-Xray.
+
+Cơ chế: quét keyword, xử lý phủ định đơn giản (no/without/clear/normal ... + bệnh = 0).
 """
 import re
 

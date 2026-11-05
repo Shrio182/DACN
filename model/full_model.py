@@ -15,7 +15,6 @@ from .losses import (
     term_weighted_cross_entropy,
     mlc_bce_loss,
     itm_triplet_loss,
-    itm_temporal_weight,
 )
 
 
@@ -35,7 +34,6 @@ class MulticriteriaTransformer(nn.Module):
         report_ids: torch.Tensor,         # (B, T) — báo cáo gốc, chưa shift
         mlc_labels: torch.Tensor = None,  # (B, L) — nhãn bệnh (None khi inference)
         term_weight_table: torch.Tensor = None,  # (V,) — None khi inference
-        epoch: int = 0,
     ):
         # --- Encoder ---
         regional_features, cls_global = self.encoder(images)
@@ -62,13 +60,14 @@ class MulticriteriaTransformer(nn.Module):
             total_loss = total_loss + self.tcfg.lambda_mlc * l_mlc
             loss_dict["mlc"] = l_mlc.item()
 
-        # 3) ITM loss với triplet margin + L2-reg + temporal weight (Eq.8–11)
+        # 3) ITM loss với triplet margin + L2-reg (Eq.8–9)
+        #    Temporal weighting (Eq.10-11) đã được áp dụng TRONG decoder (txt_pooled)
+        #    theo vị trí token, không phải theo epoch. Dùng λ_ITM cố định = 5.0.
         sim = self.itm_head(cls_global, txt_pooled)
         l_itm = itm_triplet_loss(sim, epsilon=self.tcfg.itm_epsilon, mu=self.tcfg.itm_mu)
-        w_itm = itm_temporal_weight(epoch, self.tcfg.itm_ramp_k, self.tcfg.lambda_itm_max)
-        total_loss = total_loss + w_itm * l_itm
+        total_loss = total_loss + self.tcfg.lambda_itm_max * l_itm
         loss_dict["itm"] = l_itm.item()
-        loss_dict["w_itm"] = w_itm
+        loss_dict["w_itm"] = self.tcfg.lambda_itm_max
 
         loss_dict["total"] = total_loss.item()
         return total_loss, loss_dict

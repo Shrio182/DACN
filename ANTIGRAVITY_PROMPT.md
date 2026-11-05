@@ -1,67 +1,64 @@
-# Prompt để dán vào Antigravity Agent
+### CÁC ĐIỀU CHỈNH BẮT BUỘC ĐỂ SÁT VỚI PAPER
 
-> Mở thư mục project `mct_skeleton/` trong Antigravity, mở Agent panel, dán toàn bộ
-> phần dưới đây. Đọc kỹ phần "Ràng buộc" để AI không phá code đang chạy được.
+**1. IU-Xray Dataset**
 
----
+- Số lượng ban đầu theo paper: 3.955 reports và 7.470 images.
+- Sau khi lọc: 3.195 reports và 6.390 images.
+- Chỉ giữ các mẫu có đủ ảnh Frontal và Lateral.
+- Chỉ giữ các báo cáo có đầy đủ Findings và Impression.
+- Ghép dữ liệu theo UID, không ghép nhầm ảnh và báo cáo.
+- Báo cáo số lượng thực tế nếu khác số lượng paper.
 
-## Bối cảnh dự án
+**2. Paired Image Input**
 
-Đây là đồ án chuyên ngành dựng lại paper IEEE TMI 2022:
-"Automated Radiographic Report Generation Purely on Transformer: A Multicriteria
-Supervised Approach" (sinh báo cáo y tế từ ảnh X-quang ngực).
+- Bật `use_paired_views = True`.
+- Resize từng ảnh về 448 × 448.
+- Patch size = 32 × 32.
+- Mã hóa Frontal và Lateral bằng Vision Transformer.
+- Kết hợp visual features của hai góc chụp theo phương pháp trong paper.
+- Không tự ý ghép hai ảnh thành một ảnh sáu kênh.
 
-Project đã có sẵn bộ khung HOÀN CHỈNH và đã được test chạy được:
-- `model/`: ViT encoder + memory-augmented decoder + 3 loss (RG+term-weight,
-  ITM+temporal-weight, MLC 14 bệnh). Đúng kiến trúc paper.
-- `data/`: tokenizer, CheXpert rule-based labeler, preprocess IU-Xray, Dataset class.
-- `train.py`, `eval.py`, `config.py`.
-- Đã test với data giả và layout CSV+images của bộ Kaggle raddar/chest-xrays-indiana-university.
+**3. Multi-Label Classification**
 
-Dataset thật đã đặt trong `iu_xray_data/` (chứa `indiana_reports.csv`,
-`indiana_projections.csv`, thư mục `images/`).
+- Giữ nhiệm vụ MLC.
+- Sử dụng CLS feature của Vision Transformer.
+- Với IU-Xray, kiểm tra trường Tags/MeSH và xây dựng multi-label targets từ dữ liệu thực tế.
+- Không mặc định IU-Xray có 14 lớp.
+- 14 structured labels được paper mô tả rõ trong phần MIMIC-CXR.
+- Nếu sử dụng CheXpert rule-based labeler cho IU-Xray, phải ghi rõ đây là phương án triển khai thay thế, không phải cấu hình nhãn được paper xác nhận.
 
-## Nhiệm vụ cho bạn (làm theo thứ tự, cứ mỗi bước xong báo lại)
+**4. Image-Text Matching**
 
-1. **Kiểm tra môi trường**: tạo virtual env, cài `torch` (phiên bản CUDA nếu máy có GPU),
-   `torchvision pillow numpy pandas nltk pycocoevalcap`. Chạy `python test_forward.py`
-   để xác nhận model chạy.
-2. **Tiền xử lý data**: chạy `python data/preprocess_iu_xray.py --data_dir ./iu_xray_data`.
-   Nếu báo lỗi không tìm thấy ảnh, kiểm tra tên thư mục ảnh và sửa đường dẫn.
-   Xác nhận in ra số mẫu train/val/test (~3955 báo cáo, ~7466 ảnh).
-3. **Thêm vào train.py**: early stopping theo CIDEr trên tập val, lưu checkpoint tốt nhất
-   thành `checkpoints/best.pt`, in loss mỗi 10 step, log tensorboard hoặc CSV đơn giản.
-   GIỮ NGUYÊN 2 nhóm learning rate (encoder 5e-5, còn lại 1e-4) và 30 epochs theo paper.
-4. **Hoàn thiện eval.py**: tích hợp đầy đủ `pycocoevalcap` để tính BLEU-1→4, METEOR,
-   ROUGE-L, CIDEr trên tập test, in bảng kết quả.
-5. **Viết demo Streamlit** (`demo.py`): chọn file ảnh X-quang → load `best.pt` →
-   `model.generate()` → hiển thị báo cáo sinh được.
-6. **Khuyến nghị**: nếu máy không có GPU, viết `train_kaggle.ipynb` hoặc hướng dẫn
-   chạy trên Kaggle GPU (dataset đã có sẵn trên Kaggle).
+- Giữ Triplet Loss theo Equation 10.
+- Margin = 0.05.
+- L2 regularization = 0.025.
+- Temporal weighting alpha = 0.5.
+- Negative reports được lấy từ các mẫu khác trong mini-batch.
+- Temporal weighting được áp dụng theo vị trí token trong report, không phải scheduler tăng trọng số theo epoch.
+- Không yêu cầu ITM loss khởi đầu phải bằng log(batch_size).
 
-## Lệnh chính
+**5. Training**
 
-```bash
-python data/preprocess_iu_xray.py --data_dir ./iu_xray_data
-python train.py --data_dir ./iu_xray_data --epochs 30
-python eval.py --data_dir ./iu_xray_data --checkpoint checkpoints/best.pt
-streamlit run demo.py
-```
+- Optimizer = Adam.
+- Mini-batch size = 16.
+- Vision Encoder learning rate = 5e-5.
+- Các tham số còn lại learning rate = 1e-4.
+- Training = 30 epochs.
+- Loss weights: RG = 1.0, MLC = 2.0, ITM = 5.0.
+- Nếu phần cứng không đủ, báo cáo rõ batch size thực tế và cách điều chỉnh.
 
-## Ràng buộc (QUAN TRỌNG — không được vi phạm)
+**6. Data Split và Evaluation**
 
-- KHÔNG đổi kiến trúc model (encoder 3 lớp, decoder memory-augmented, 3 loss) nếu chưa
-  hỏi tôi. Chỉ được sửa phần train/eval/demo.
-- Mỗi lần sửa file, giải thích ngắn gọn đã sửa gì.
-- Nếu một lệnh chạy >5 phút (như train full), KHÔNG chờ trong phiên agent — khởi chạy
-  nền (background) và hướng dẫn tôi theo dõi log.
-- Commit git trước mỗi thay đổi lớn để tôi có thể revert.
+- Giữ 10% reports làm test set.
+- Không chia ảnh riêng lẻ khiến cùng UID xuất hiện ở nhiều tập.
+- Validation set là phần bổ sung của quá trình tái triển khai, không được ghi là thiết lập nguyên bản của paper.
+- Các chỉ số chính: BLEU, ROUGE-L và CIDEr.
+- METEOR có thể được bổ sung như chỉ số tham khảo.
 
-## Dấu hiệu train hợp lệ
+**7. Nguyên tắc sửa source code**
 
-- `rg` giảm dần từ ~6-7 về ~2-3.
-- `mlc` ban đầu ~0.69 (random), sau đó giảm.
-- `itm` ban đầu ~log(batch_size)=2.77, sau đó giảm.
-- `w_itm` tăng dần từ 0 về 1 (temporal weighting).
+Trước khi sửa, hãy kiểm tra và đối chiếu toàn bộ model, loss và dataloader hiện có với paper.
 
-"Hãy chỉnh sửa lại toàn bộ source code của project (config.py, các file model, loss, và dataloader) để tuân thủ tuyệt đối các thiết lập và thông số kỹ thuật được công bố trong bài báo khoa học gốc (Automated Radiographic Report Generation Purely on Transformer: A Multicriteria Supervised Approach), cụ thể như sau:Cấu hình Model & Ảnh đầu vào (config.py):Resize ảnh X-quang đầu vào về kích thước chính xác $448 \times 448$, patch size $32$.   Bật chế độ dùng 2 góc chụp cho IU-Xray (use_paired_views = True) ghép frontal và lateral lại với nhau.   Số lớp của Vision Encoder = 3, Text Decoder = 3, số heads chú ý = 8.   Trọng số hàm Loss (Equation 12):Cập nhật lại các trọng số cân bằng Loss: $\lambda_{RG} = 1.0$, $\lambda_{MLC} = 2.0$, và $\lambda_{ITM} = 5.0$.   Cài đặt chuẩn các tham số cho ITM loss: biên độ triplet $\epsilon = 0.05$, L2-regularization $\mu_{ITM} = 0.025$, hệ số temporal-weighting $\alpha = 0.5$.   Quá trình Tối ưu hóa (Optimization):Dùng Adam Optimizer với batch size = 16.   Thiết lập learning rate riêng: 5e-5 cho Vision Encoder và 1e-4 cho các phần còn lại.   Huấn luyện đủ 30 epochs.   Tiền xử lý dữ liệu IU-Xray:Đảm bảo script tiền xử lý lọc chính xác các báo cáo có đủ 2 góc chụp và đầy đủ hai phần Findings và Impression (chuẩn 3.195 mẫu), đồng thời chia ngẫu nhiên 10% làm tập test đúng như bài báo." 
+Không viết lại những thành phần đã triển khai đúng.
+
+Chỉ sửa những thành phần sai, thiếu hoặc chưa tương thích với dataset IU-Xray. Mỗi thay đổi cần nêu rõ lý do và cách kiểm chứng.

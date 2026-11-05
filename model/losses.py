@@ -5,9 +5,10 @@ Ba thành phần loss của paper IEEE TMI 2022:
 1. RG loss  : cross-entropy sinh báo cáo, có term-weighting (Eq.4–5).
 2. MLC loss : binary cross-entropy dự đoán nhãn bệnh (Eq.6).
 3. ITM loss : image-text matching với triplet margin ε=0.05 + L2-reg μ=0.025 (Eq.8–9).
-              Nhân với temporal weight α=0.5 tăng dần theo epoch (Eq.10–11).
+
+Lưu ý: Temporal weighting (Eq.10-11, α=0.5) được áp dụng TRONG decoder
+theo VỊ TRÍ TOKEN (không phải scheduler theo epoch) — xem decoder.py.
 """
-import math
 import torch
 import torch.nn.functional as F
 
@@ -72,10 +73,3 @@ def itm_triplet_loss(
 
     return triplet + l2_reg
 
-
-def itm_temporal_weight(epoch: int, alpha: float = 0.5, max_val: float = 5.0) -> float:
-    """Temporal weighting (Eq.10–11): trọng số ITM tăng từ 0 lên max_val theo sigmoid.
-    w(t) = max_val × (2σ(α·t) − 1)  với σ là sigmoid.
-    α=0.5, max_val=λ_ITM=5.0 theo paper.
-    """
-    return max_val * (2.0 / (1.0 + math.exp(-alpha * epoch)) - 1.0)

@@ -28,6 +28,8 @@ class ModelConfig:
     pad_idx: int = 0               # idx của token <pad>
 
     # --- Nhãn bệnh (Multi-Label Classification) ---
+    # Paper: 14 structured labels từ MIMIC-CXR.
+    # IU-Xray: dùng CheXpert rule-based labeler (phương án thay thế — xem chexpert_labeler.py)
     num_mlc_labels: int = 14       # 14 bệnh theo bộ nhãn CheXpert
 
     # --- Memory-driven LayerNorm (đặc trưng của paper) ---
@@ -39,6 +41,11 @@ class ModelConfig:
 
     # --- IU-Xray: luôn dùng 2 view (frontal + lateral) ---
     use_paired_views: bool = True   # paper: IU-Xray dùng cả 2 góc chụp
+
+    # --- Temporal weighting cho ITM (Eq.10-11) ---
+    # Áp dụng theo VỊ TRÍ TOKEN trong report: w(t) = 2σ(α·t) − 1
+    # Token ở cuối report (chứa kết luận quan trọng) được trọng số cao hơn
+    temporal_alpha: float = 0.5     # paper: α = 0.5
 
 
 @dataclass
@@ -53,9 +60,6 @@ class TrainConfig:
     lambda_rg: float = 1.0          # λ_RG = 1.0
     lambda_mlc: float = 2.0         # λ_MLC = 2.0 (paper Table I)
     lambda_itm_max: float = 5.0     # λ_ITM = 5.0 (paper Table I)
-
-    # Temporal weighting cho ITM: w(t) = λ_ITM × sigmoid(α × t)
-    itm_ramp_k: float = 0.5         # α = 0.5 (paper: hệ số temporal-weighting)
 
     # ITM loss hyperparameters (paper Eq.8 & Eq.9)
     itm_epsilon: float = 0.05       # ε = 0.05: biên độ triplet margin

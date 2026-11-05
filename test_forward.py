@@ -23,7 +23,7 @@ def main():
     term_weight_table = torch.ones(mcfg.vocab_size)
 
     # Forward + backward
-    loss, loss_dict = model(images, report_ids, mlc_labels, term_weight_table, epoch=5)
+    loss, loss_dict = model(images, report_ids, mlc_labels, term_weight_table)
     loss.backward()
     print("Loss dict:", {k: round(v, 4) for k, v in loss_dict.items()})
 

@@ -180,7 +180,7 @@ def main():
             mlc_labels = mlc_labels.to(device)
 
             with torch.autocast("cuda", enabled=use_amp):
-                loss, loss_dict = model(images, report_ids, mlc_labels, term_weight_table, epoch)
+                loss, loss_dict = model(images, report_ids, mlc_labels, term_weight_table)
                 loss = loss / args.accum_steps
 
             scaler.scale(loss).backward()

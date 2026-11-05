@@ -79,5 +79,14 @@ class MemoryAugmentedDecoder(nn.Module):
         x = self.final_norm(x_avg)
 
         logits = self.lm_head(x)                                    # (B, T, V)
-        txt_pooled = x.mean(dim=1)                                  # (B, d) — dùng cho ITM
+
+        # Temporal weighting theo vị trí token (Eq.10-11 paper):
+        # w(t) = 2σ(α·t) − 1, α=0.5
+        # Token ở cuối report (chứa kết luận lâm sàng) được trọng số cao hơn
+        T_len = x.size(1)
+        positions = torch.arange(T_len, device=x.device, dtype=x.dtype)
+        alpha = self.cfg.temporal_alpha
+        tw = 2.0 * torch.sigmoid(alpha * positions) - 1.0           # (T,)
+        tw = tw / tw.sum().clamp(min=1e-8)                           # chuẩn hoá tổng = 1
+        txt_pooled = (x * tw[None, :, None]).sum(dim=1)              # (B, d) — dùng cho ITM
         return logits, txt_pooled

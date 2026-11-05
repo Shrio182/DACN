@@ -153,7 +153,8 @@ def main():
 
     random.shuffle(data)
     n = len(data)
-    # Paper: 80% train, 10% val, 10% test
+    # Paper: chỉ nêu 10% test set. Phần val set (10%) là BỔ SUNG của quá trình
+    # tái triển khai (dùng cho early stopping), KHÔNG phải thiết lập nguyên bản của paper.
     n_test = int(0.1 * n)
     n_val  = int(0.1 * n)
     splits = {
