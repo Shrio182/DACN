@@ -87,6 +87,14 @@ def main():
     mcfg.vocab_size = len(tokenizer)
     mcfg.use_paired_views = True
 
+    # Tự động load số lớp MLC từ mesh_labels.json
+    mesh_labels_path = os.path.join(args.data_dir, "mesh_labels.json")
+    if os.path.exists(mesh_labels_path):
+        import json as _json
+        with open(mesh_labels_path) as f:
+            mesh_info = _json.load(f)
+        mcfg.num_mlc_labels = mesh_info["num_labels"]
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Thiết bị: {device}")
 

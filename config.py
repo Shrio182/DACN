@@ -28,16 +28,16 @@ class ModelConfig:
     pad_idx: int = 0               # idx của token <pad>
 
     # --- Nhãn bệnh (Multi-Label Classification) ---
-    # Paper: 14 structured labels từ MIMIC-CXR.
-    # IU-Xray: dùng CheXpert rule-based labeler (phương án thay thế — xem chexpert_labeler.py)
-    num_mlc_labels: int = 14       # 14 bệnh theo bộ nhãn CheXpert
+    # IU-Xray: dùng MeSH root tags thực tế (xem mesh_labeler.py).
+    # Số lớp được tự động cập nhật từ mesh_labels.json sau preprocess.
+    # Paper: 14 structured labels chỉ áp dụng cho MIMIC-CXR, KHÔNG phải IU-Xray.
+    num_mlc_labels: int = 65       # default ~65 MeSH root tags (min_freq=10)
 
     # --- Memory-driven LayerNorm (đặc trưng của paper) ---
     memory_dim: int = 64           # chiều của vector memory điều khiển LN
 
     # --- Image-Text Matching (ITM) ---
     itm_dim: int = 512
-    itm_temperature: float = 0.07
 
     # --- IU-Xray: luôn dùng 2 view (frontal + lateral) ---
     use_paired_views: bool = True   # paper: IU-Xray dùng cả 2 góc chụp

@@ -26,7 +26,8 @@ class MulticriteriaTransformer(nn.Module):
         self.encoder = ViTEncoder(mcfg)
         self.decoder = MemoryAugmentedDecoder(mcfg)
         self.mlc_head = MLCHead(mcfg.d_model, mcfg.num_mlc_labels)
-        self.itm_head = ITMHead(mcfg.d_model, mcfg.itm_dim, mcfg.itm_temperature)
+        # ITM head: per-token similarity + temporal weighting (Eq.10-11)
+        self.itm_head = ITMHead(mcfg.d_model, mcfg.itm_dim, mcfg.temporal_alpha)
 
     def forward(
         self,
@@ -40,7 +41,9 @@ class MulticriteriaTransformer(nn.Module):
 
         # --- Decoder (shift-right: input = report[:, :-1], target = report[:, 1:]) ---
         dec_input = report_ids[:, :-1]
-        logits, txt_pooled = self.decoder(dec_input, regional_features)
+        logits, txt_features = self.decoder(dec_input, regional_features)
+        # logits: (B, T-1, V) — cho RG loss
+        # txt_features: (B, T-1, d_model) — per-token fused features cho ITM
 
         total_loss = torch.tensor(0.0, device=images.device)
         loss_dict = {}
@@ -60,10 +63,13 @@ class MulticriteriaTransformer(nn.Module):
             total_loss = total_loss + self.tcfg.lambda_mlc * l_mlc
             loss_dict["mlc"] = l_mlc.item()
 
-        # 3) ITM loss với triplet margin + L2-reg (Eq.8–9)
-        #    Temporal weighting (Eq.10-11) đã được áp dụng TRONG decoder (txt_pooled)
-        #    theo vị trí token, không phải theo epoch. Dùng λ_ITM cố định = 5.0.
-        sim = self.itm_head(cls_global, txt_pooled)
+        # 3) ITM loss (Eq.8–11)
+        #    - ITM head tính per-token similarity với temporal weighting (Eq.10-11)
+        #    - Padding mask để loại trừ padding tokens khỏi phép tính
+        #    - Triplet loss + L2-reg (Eq.8-9)
+        #    - λ_ITM = 5.0 cố định (không dùng epoch-based scheduler)
+        padding_mask = (dec_input != self.mcfg.pad_idx)             # (B, T-1), True = valid
+        sim = self.itm_head(cls_global, txt_features, padding_mask)
         l_itm = itm_triplet_loss(sim, epsilon=self.tcfg.itm_epsilon, mu=self.tcfg.itm_mu)
         total_loss = total_loss + self.tcfg.lambda_itm_max * l_itm
         loss_dict["itm"] = l_itm.item()

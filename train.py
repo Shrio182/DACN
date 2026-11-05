@@ -121,6 +121,16 @@ def main():
         mcfg.vocab_size = len(tokenizer)
         mcfg.pad_idx = 0
         mcfg.use_paired_views = True
+
+        # Tự động load số lớp MLC từ mesh_labels.json (nếu có)
+        mesh_labels_path = os.path.join(args.data_dir, "mesh_labels.json")
+        if os.path.exists(mesh_labels_path):
+            import json
+            with open(mesh_labels_path) as f:
+                mesh_info = json.load(f)
+            mcfg.num_mlc_labels = mesh_info["num_labels"]
+            print(f"MLC labels: {mcfg.num_mlc_labels} lớp (MeSH root tags)")
+
         term_weight_table = torch.load(os.path.join(args.data_dir, "term_weights.pt"),
                                        weights_only=True)
         from data.iu_xray_dataset import IUXrayDataset
