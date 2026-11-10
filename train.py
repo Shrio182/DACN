@@ -1,9 +1,7 @@
 """
 train.py — Vòng lặp train.
 ==========================
-- Không có --data_dir  : chạy với DUMMY data (kiểm tra luồng).
-- Có --data_dir        : train thật trên IU-Xray (cần chạy preprocess trước,
-                         hoặc script tự chạy nếu chưa có processed file).
+Yêu cầu cung cấp --data_dir chỉ tới thư mục IU-Xray (chứa annotation.json hoặc indiana_reports.csv + images/).
 
 Tính năng:
   - Early stopping theo CIDEr trên tập val
@@ -26,24 +24,7 @@ from torch.utils.data import DataLoader
 from config import ModelConfig, TrainConfig
 from model.full_model import MulticriteriaTransformer
 from data.tokenizer import SimpleTokenizer, BOS, EOS
-
-
-# ---------------- DUMMY data (chưa có dataset) ----------------
-class DummyDataIterator:
-    def __init__(self, mcfg, tcfg, num_batches=5):
-        self.mcfg, self.tcfg = mcfg, tcfg
-        self.num_batches = num_batches
-
-    def __iter__(self):
-        B, T = self.tcfg.batch_size, self.mcfg.max_seq_len
-        for _ in range(self.num_batches):
-            if self.mcfg.use_paired_views:
-                images = torch.randn(B, 2, self.mcfg.in_channels, self.mcfg.img_size, self.mcfg.img_size)
-            else:
-                images = torch.randn(B, self.mcfg.in_channels, self.mcfg.img_size, self.mcfg.img_size)
-            report_ids = torch.randint(1, self.mcfg.vocab_size, (B, T))
-            mlc_labels = torch.randint(0, 2, (B, self.mcfg.num_mlc_labels)).float()
-            yield images, report_ids, mlc_labels
+from data.iu_xray_dataset import IUXrayDataset
 
 
 def build_optimizer(model, tcfg):
@@ -99,7 +80,7 @@ def evaluate_cider_on_val(model, val_loader, tokenizer, device):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data_dir", default=None, help="Thư mục IU-Xray (annotation.json + images/)")
+    ap.add_argument("--data_dir", required=True, help="Thư mục IU-Xray (annotation.json + images/)")
     ap.add_argument("--epochs", type=int, default=None)
     ap.add_argument("--batch_size", type=int, default=None, help="Batch thật trên GPU (giảm nếu hết VRAM)")
     ap.add_argument("--accum_steps", type=int, default=1, help="Gradient accumulation: effective batch = batch_size * accum_steps")
@@ -111,47 +92,39 @@ def main():
     if args.epochs: tcfg.epochs = args.epochs
     if args.batch_size: tcfg.batch_size = args.batch_size
 
-    term_weight_table = torch.ones(mcfg.vocab_size)
-    tokenizer = None
+    maybe_preprocess(args.data_dir)
+    tokenizer = SimpleTokenizer.load(os.path.join(args.data_dir, "vocab.json"))
+    mcfg.vocab_size = len(tokenizer)
+    mcfg.pad_idx = 0
+    mcfg.use_paired_views = True
+
+    # Tự động load số lớp MLC từ mesh_labels.json (nếu có)
+    mesh_labels_path = os.path.join(args.data_dir, "mesh_labels.json")
+    if os.path.exists(mesh_labels_path):
+        import json
+        with open(mesh_labels_path) as f:
+            mesh_info = json.load(f)
+        mcfg.num_mlc_labels = mesh_info["num_labels"]
+        print(f"MLC labels: {mcfg.num_mlc_labels} lớp (MeSH root tags)")
+
+    term_weight_table = torch.load(os.path.join(args.data_dir, "term_weights.pt"),
+                                   weights_only=True)
+    ds = IUXrayDataset(
+        os.path.join(args.data_dir, "processed_train.json"),
+        image_root=args.data_dir,
+        max_len=mcfg.max_seq_len, img_size=mcfg.img_size,
+    )
+    train_loader = DataLoader(ds, batch_size=tcfg.batch_size, shuffle=True, num_workers=0)
+    print(f"Train: {len(ds)} mẫu, vocab={mcfg.vocab_size}")
+
+    # Tạo val loader cho early stopping
     val_loader = None
-
-    if args.data_dir:
-        maybe_preprocess(args.data_dir)
-        tokenizer = SimpleTokenizer.load(os.path.join(args.data_dir, "vocab.json"))
-        mcfg.vocab_size = len(tokenizer)
-        mcfg.pad_idx = 0
-        mcfg.use_paired_views = True
-
-        # Tự động load số lớp MLC từ mesh_labels.json (nếu có)
-        mesh_labels_path = os.path.join(args.data_dir, "mesh_labels.json")
-        if os.path.exists(mesh_labels_path):
-            import json
-            with open(mesh_labels_path) as f:
-                mesh_info = json.load(f)
-            mcfg.num_mlc_labels = mesh_info["num_labels"]
-            print(f"MLC labels: {mcfg.num_mlc_labels} lớp (MeSH root tags)")
-
-        term_weight_table = torch.load(os.path.join(args.data_dir, "term_weights.pt"),
-                                       weights_only=True)
-        from data.iu_xray_dataset import IUXrayDataset
-        ds = IUXrayDataset(
-            os.path.join(args.data_dir, "processed_train.json"),
-            image_root=args.data_dir,
-            max_len=mcfg.max_seq_len, img_size=mcfg.img_size,
-        )
-        train_loader = DataLoader(ds, batch_size=tcfg.batch_size, shuffle=True, num_workers=0)
-        print(f"Train thật: {len(ds)} mẫu, vocab={mcfg.vocab_size}")
-
-        # Tạo val loader cho early stopping
-        val_json = os.path.join(args.data_dir, "processed_val.json")
-        if os.path.exists(val_json):
-            val_ds = IUXrayDataset(val_json, image_root=args.data_dir,
-                                   max_len=mcfg.max_seq_len, img_size=mcfg.img_size)
-            val_loader = DataLoader(val_ds, batch_size=tcfg.batch_size, shuffle=False, num_workers=0)
-            print(f"Val: {len(val_ds)} mẫu (dùng cho early stopping theo CIDEr)")
-    else:
-        train_loader = DummyDataIterator(mcfg, tcfg)
-        print("Chạy với DUMMY data. Dùng --data_dir để train thật.")
+    val_json = os.path.join(args.data_dir, "processed_val.json")
+    if os.path.exists(val_json):
+        val_ds = IUXrayDataset(val_json, image_root=args.data_dir,
+                               max_len=mcfg.max_seq_len, img_size=mcfg.img_size)
+        val_loader = DataLoader(val_ds, batch_size=tcfg.batch_size, shuffle=False, num_workers=0)
+        print(f"Val: {len(val_ds)} mẫu (dùng cho early stopping theo CIDEr)")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = args.amp and torch.cuda.is_available()

@@ -60,9 +60,7 @@ python train.py            # chạy vài bước train với dữ liệu giả
 ## Lưu ý
 - Nhãn MLC hiện dùng rule-based có xử lý phủ định (đã test). Để chính xác như paper,
   chạy **CheXpert Labeler** chính thức (Stanford) trên báo cáo rồi ghi đè `mlc_labels`.
-- `test_iu_xray_pipeline.py`: tạo data IU-Xray giả và chạy toàn bộ pipeline để kiểm tra
-  mà không cần tải dataset thật.
-- `test_forward.py`: kiểm tra model với tensor giả.
+- `smoke_test.py`: kiểm thử toàn diện forward pass, gradient, và ITM loss trên batch thật trước khi train.
 
 ## Lưu ý cho AI assistant (Cursor / Antigravity / Copilot)
 

@@ -4,21 +4,28 @@ Chạy: python dataset_filter_audit.py
 """
 import csv
 import os
+import argparse
 
-DATA_DIR = "iu_xray_data"
-REPORTS_CSV = os.path.join(DATA_DIR, "indiana_reports.csv")
-PROJ_CSV = os.path.join(DATA_DIR, "indiana_projections.csv")
-IMAGES_DIR = os.path.join(DATA_DIR, "images")
+DEFAULT_DATA_DIR = "data/archive" if os.path.exists("data/archive/indiana_reports.csv") else "iu_xray_data"
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Audit IU-Xray dataset filtering")
+    parser.add_argument("--data_dir", default=DEFAULT_DATA_DIR, help="Thư mục chứa CSV và images")
+    args = parser.parse_args()
+
+    data_dir = args.data_dir
+    reports_csv = os.path.join(data_dir, "indiana_reports.csv")
+    proj_csv = os.path.join(data_dir, "indiana_projections.csv")
+    images_dir = os.path.join(data_dir, "images")
+
     lines = []
     def p(s=""):
         print(s)
         lines.append(s)
 
     p("=" * 70)
-    p("DATASET FILTER AUDIT — IU-Xray")
+    p(f"DATASET FILTER AUDIT — IU-Xray ({data_dir})")
     p("=" * 70)
 
     # --- 1. Reports CSV ---
@@ -28,7 +35,7 @@ def main():
     uid_mesh = {}
     dup_uids_report = 0
 
-    with open(REPORTS_CSV, encoding="utf-8") as f:
+    with open(reports_csv, encoding="utf-8") as f:
         for row in csv.DictReader(f):
             uid = str(row.get("uid", "")).strip()
             if uid in all_uids:
@@ -64,7 +71,7 @@ def main():
     all_filenames = []
     dup_filenames = set()
 
-    with open(PROJ_CSV, encoding="utf-8") as f:
+    with open(proj_csv, encoding="utf-8") as f:
         for row in csv.DictReader(f):
             uid = str(row.get("uid", "")).strip()
             fname = (row.get("filename") or "").strip()
@@ -104,8 +111,8 @@ def main():
         p(f"     (none)")
 
     # --- Image file existence check ---
-    if os.path.isdir(IMAGES_DIR):
-        existing_images = set(os.listdir(IMAGES_DIR))
+    if os.path.isdir(images_dir):
+        existing_images = set(os.listdir(images_dir))
         broken_paths = []
         for fn in set(all_filenames):
             if fn not in existing_images:
@@ -118,7 +125,7 @@ def main():
                 p(f"     MISSING: {bp}")
     else:
         p(f"\n4. IMAGE FILE CHECK")
-        p(f"   [WARNING] images/ directory not found at {IMAGES_DIR}")
+        p(f"   [WARNING] images/ directory not found at {images_dir}")
 
     # --- Paired filtering ---
     p(f"\n5. PAIRED IMAGE FILTERING (text-valid UIDs only)")

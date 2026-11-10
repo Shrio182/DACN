@@ -1,4 +1,4 @@
-# Python
+# Python & IDE cache
 __pycache__/
 *.py[cod]
 *.pyo
@@ -6,6 +6,11 @@ __pycache__/
 *.egg-info/
 *.egg
 .eggs/
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
 
 # Virtual environments
 venv/
@@ -13,30 +18,33 @@ env/
 .venv/
 ENV/
 
-# PyTorch checkpoints (lớn, dùng git-lfs nếu cần)
-checkpoints/*.pt
+# Checkpoint weights (Lưu trên Drive / Colab, không push Git)
+checkpoints/
+*.pt
+*.pth
+*.onnx
 
-# Data processed and raw (quá lớn để đưa lên GitHub)
+# Data & Image Files (CHẶN NẶNG - không đẩy ảnh lên Git)
+data/iu_xray/images/
+data/archive/images/
+/iu_xray/
+/archive/
 iu_xray_data/
 chest xray data/
-*.dcm.png
+*.tgz
+*.tar
+*.zip
 *.png
-*.csv
+*.jpg
+*.jpeg
+*.dcm
 
-
-# Logs
+# Logs & Diagnostics outputs
 logs/
+outputs/diagnostics/*.csv
+outputs/diagnostics/*.json
 
-# IDE
-.vscode/
-.idea/
-*.suo
-*.user
-
-# OS
+# OS & Jupyter
 .DS_Store
 Thumbs.db
-
-# Jupyter
 .ipynb_checkpoints/
-
