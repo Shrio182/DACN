@@ -34,7 +34,10 @@ chest xray data/
 *.tgz
 *.tar
 *.zip
+*.rar
+*.7z
 *.png
+!outputs/charts/*.png
 *.jpg
 *.jpeg
 *.dcm

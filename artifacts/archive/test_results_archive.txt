@@ -1,0 +1,51 @@
+Thiết bị: cuda
+Đánh giá trên tập test: 293 mẫu
+  Đã xử lý 80/293 mẫu...
+  Đã xử lý 160/293 mẫu...
+  Đã xử lý 240/293 mẫu...
+
+Đã sinh xong 293 báo cáo. Đang tính metrics...
+
+============================================================
+VÍ DỤ (Generated vs Ground-truth)
+============================================================
+
+--- Mẫu 0 ---
+GEN : the heart is normal in size and contour the lungs are clear without evidence of infiltrate there is no pneumothorax or effusion no acute cardiopulmonary disease
+GT  : the lungs are hyperexpanded there is a large rounded lucency in the right upper lung xxxx large emphysematous xxxx there are xxxx biapical opacities xxxx scarring no focal airspace consolidation to suggest pneumonia there is no pleural effusion no pneumothorax normal heart size there are minimal degenerative changes of the spine emphysema large right upper lobe xxxx biapical
+
+--- Mẫu 1 ---
+GEN : the heart is normal in size the mediastinum is unremarkable the lungs are clear no acute disease
+GT  : the cardiomediastinal silhouette is within normal limits for size and contour the lungs are normally inflated without evidence of focal airspace disease pleural effusion or pneumothorax stable calcified granuloma within the right upper lung no acute bone abnormality no acute cardiopulmonary process
+
+--- Mẫu 2 ---
+GEN : the heart size is normal the mediastinal contour is within normal limits the lungs are free of any focal infiltrates there is no nodules or masses no visible pneumothorax no visible pleural fluid the diaphragm 1 no acute radiographic cardiopulmonary process 2 no visible free intraperitoneal air under the diaphragm 2 no visible free intraperitoneal air under the diaphragm
+GT  : the lungs are clear bilaterally specifically no evidence of focal consolidation pneumothorax or pleural effusion cardio mediastinal silhouette is unremarkable visualized osseous structures of the thorax are without acute abnormality no acute cardiopulmonary abnormality
+
+--- Mẫu 3 ---
+GEN : the heart is normal in size the mediastinum is unremarkable there is no pleural effusion pneumothorax or focal airspace disease the xxxx are unremarkable no acute cardiopulmonary abnormality
+GT  : low lung volumes are present the heart size and pulmonary vascularity appear within normal limits the lungs are free of focal airspace disease no pleural effusion or pneumothorax is seen there has been interval development of multiple healed left rib fractures degenerative changes are present in the spine no evidence of active disease
+
+--- Mẫu 4 ---
+GEN : the heart is normal in size and contour the lungs are clear without evidence of infiltrate there is no pneumothorax or effusion no acute cardiopulmonary disease
+GT  : there is stable mild cardiomegaly with normal caliber pulmonary vasculature there are grossly intact xxxx sternotomy xxxx and mediastinal surgical clips there is no focal airspace disease pneumothorax or pleural effusion there are no acute bony findings stable chronic changes no acute findings
+
+============================================================
+KẾT QUẢ ĐÁNH GIÁ
+============================================================
+{'testlen': 7342, 'reflen': 10515, 'guess': [7342, 7049, 6756, 6463], 'correct': [3518, 1203, 558, 257]}
+ratio: 0.698240608654237
+
+Metric            Score
+------------------------
+BLEU-1           0.3110
+BLEU-2           0.1856
+BLEU-3           0.1227
+BLEU-4           0.0831
+ROUGE-L          0.2998
+CIDEr            0.3273
+METEOR           0.1365
+------------------------
+
+Checkpoint: checkpoints/best.pt
+Tập đánh giá: test (293 mẫu)

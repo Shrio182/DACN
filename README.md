@@ -55,7 +55,17 @@ python train.py            # chạy vài bước train với dữ liệu giả
    python eval.py --data_dir ./iu_xray_data --checkpoint checkpoints/epochXX.pt
    ```
 
-5. **Demo**: viết giao diện Streamlit/Gradio — chọn ảnh X-quang → gọi `model.generate()` → in báo cáo.
+5. **Demo Web App (Streamlit)**:
+   ```bash
+   streamlit run demo.py
+   ```
+   Chọn mô hình từ `artifacts/` (IU-Xray Archive, TimPhoi, hoặc MIMIC-CXR), tải lên ảnh frontal + lateral để sinh báo cáo y khoa và xem dự đoán xác suất 65 nhãn bệnh MeSH.
+
+6. **Vẽ biểu đồ so sánh thực nghiệm**:
+   ```bash
+   python plot_comparison.py
+   ```
+   Tự động đọc `artifacts/*/` và xuất biểu đồ Training Curves & Test Metrics 300 DPI vào `outputs/charts/`.
 
 ## Lưu ý
 - Nhãn MLC hiện dùng rule-based có xử lý phủ định (đã test). Để chính xác như paper,

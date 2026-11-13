@@ -2,7 +2,9 @@ torch>=2.0
 torchvision
 numpy
 pandas
+matplotlib
+pillow
+streamlit
 nltk
 pycocoevalcap          # đánh giá BLEU/METEOR/ROUGE-L/CIDEr
 # Khi có dataset MIMIC-CXR: cần thêm CheXpert labeler để sinh nhãn MLC.
-# Demo giao diện: streamlit hoặc gradio

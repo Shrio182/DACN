@@ -79,16 +79,109 @@ class MulticriteriaTransformer(nn.Module):
         return total_loss, loss_dict
 
     @torch.no_grad()
-    def generate(self, images: torch.Tensor, bos_idx: int, eos_idx: int):
-        """Sinh báo cáo bằng greedy decoding (skeleton cho inference/demo)."""
+    def predict_mlc(self, images: torch.Tensor) -> torch.Tensor:
+        """Dự đoán xác suất các nhãn bệnh từ CLS token toàn cục.
+        Trả về: probs tensor shape (B, num_mlc_labels) trong khoảng [0, 1].
+        """
+        _, cls_global = self.encoder(images)
+        logits = self.mlc_head(cls_global)
+        return torch.sigmoid(logits)
+
+    @torch.no_grad()
+    def generate(
+        self,
+        images: torch.Tensor,
+        bos_idx: int,
+        eos_idx: int,
+        max_len: int = None,
+        beam_size: int = 1,
+        repetition_penalty: float = 1.0,
+    ) -> torch.Tensor:
+        """Sinh báo cáo với hỗ trợ Greedy Decoding và Beam Search kết hợp Repetition Penalty."""
         device = images.device
         regional_features, cls_global = self.encoder(images)
-        B = images.size(0) if images.dim() == 4 else images.size(0)
-        ys = torch.full((B, 1), bos_idx, dtype=torch.long, device=device)
-        for _ in range(self.mcfg.max_seq_len - 1):
-            logits, _ = self.decoder(ys, regional_features)
-            next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)  # (B,1)
-            ys = torch.cat([ys, next_token], dim=1)
-            if (next_token == eos_idx).all():
-                break
-        return ys
+        max_len = max_len or self.mcfg.max_seq_len
+        B = images.size(0)
+
+        if beam_size <= 1:
+            ys = torch.full((B, 1), bos_idx, dtype=torch.long, device=device)
+            finished = torch.zeros(B, dtype=torch.bool, device=device)
+
+            for _ in range(max_len - 1):
+                logits, _ = self.decoder(ys, regional_features)
+                next_logits = logits[:, -1, :].clone()
+
+                if repetition_penalty != 1.0:
+                    for b in range(B):
+                        unique_tokens = torch.unique(ys[b])
+                        for token_id in unique_tokens:
+                            if token_id in (bos_idx, eos_idx, self.mcfg.pad_idx):
+                                continue
+                            val = next_logits[b, token_id]
+                            if val < 0:
+                                next_logits[b, token_id] = val * repetition_penalty
+                            else:
+                                next_logits[b, token_id] = val / repetition_penalty
+
+                next_token = next_logits.argmax(dim=-1, keepdim=True)
+                next_token = torch.where(finished.unsqueeze(1), torch.full_like(next_token, eos_idx), next_token)
+                ys = torch.cat([ys, next_token], dim=1)
+                finished = finished | (next_token.squeeze(1) == eos_idx)
+                if finished.all():
+                    break
+            return ys
+        else:
+            all_best_seqs = []
+            for b in range(B):
+                reg_b = regional_features[b:b+1]
+                beams = [(torch.tensor([[bos_idx]], dtype=torch.long, device=device), 0.0, False)]
+
+                for _ in range(max_len - 1):
+                    if all(done for _, _, done in beams):
+                        break
+
+                    candidates = []
+                    for seq, score, done in beams:
+                        if done:
+                            candidates.append((seq, score, True))
+                            continue
+
+                        logits, _ = self.decoder(seq, reg_b)
+                        next_logits = logits[:, -1, :].squeeze(0).clone()
+
+                        if repetition_penalty != 1.0:
+                            unique_tokens = torch.unique(seq[0])
+                            for token_id in unique_tokens:
+                                if token_id in (bos_idx, eos_idx, self.mcfg.pad_idx):
+                                    continue
+                                val = next_logits[token_id]
+                                if val < 0:
+                                    next_logits[token_id] = val * repetition_penalty
+                                else:
+                                    next_logits[token_id] = val / repetition_penalty
+
+                        log_probs = torch.log_softmax(next_logits, dim=-1)
+                        topk_log_probs, topk_tokens = torch.topk(log_probs, beam_size)
+
+                        for k in range(beam_size):
+                            tok = topk_tokens[k].item()
+                            lp = topk_log_probs[k].item()
+                            new_seq = torch.cat([seq, torch.tensor([[tok]], dtype=torch.long, device=device)], dim=1)
+                            new_score = score + lp
+                            new_done = (tok == eos_idx)
+                            candidates.append((new_seq, new_score, new_done))
+
+                    # Chiều dài phạt (length penalty)
+                    candidates.sort(key=lambda x: x[1] / (len(x[0][0]) ** 0.7), reverse=True)
+                    beams = candidates[:beam_size]
+
+                all_best_seqs.append(beams[0][0])
+
+            max_batch_len = max(s.size(1) for s in all_best_seqs)
+            padded_batch = []
+            for s in all_best_seqs:
+                if s.size(1) < max_batch_len:
+                    pad = torch.full((1, max_batch_len - s.size(1)), eos_idx, dtype=torch.long, device=device)
+                    s = torch.cat([s, pad], dim=1)
+                padded_batch.append(s)
+            return torch.cat(padded_batch, dim=0)

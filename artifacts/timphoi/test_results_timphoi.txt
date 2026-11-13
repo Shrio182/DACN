@@ -1,0 +1,13 @@
+﻿Checkpoint: best_timphoi.pt
+Tập đánh giá: test (590 mẫu)
+
+Metric            Score
+------------------------
+BLEU-1           0.3139
+BLEU-2           0.2046
+BLEU-3           0.1458
+BLEU-4           0.1049
+ROUGE-L          0.2888
+CIDEr            0.4486
+METEOR           0.1523
+------------------------
