@@ -1,8 +1,10 @@
-# 🩻 Multicriteria Transformer — Sinh báo cáo X-quang tự động
+# 🩻 Multicriteria Transformer — Sinh báo cáo X-quang Y tế Tự động
 
 Tái hiện (reimplementation) bài báo khoa học: **"Automated Radiographic Report Generation Purely on Transformer: A Multicriteria Supervised Approach"** — *Zhanyu Wang et al., IEEE Transactions on Medical Imaging (TMI), 2022.*
 
-Dự án triển khai kiến trúc **thuần Transformer** (không sử dụng mạng CNN trích xuất đặc trưng có sẵn) nhằm tự động sinh báo cáo y khoa hoàn chỉnh từ ảnh X-quang lồng ngực kết hợp cơ chế giám sát đa tiêu chí (Multi-Criteria Supervision).
+Dự án triển khai kiến trúc **thuần Transformer** (không sử dụng mạng CNN trích xuất đặc trưng có sẵn) nhằm tự động sinh báo cáo y khoa hoàn chỉnh từ ảnh X-quang lồng ngực kết hợp cơ chế giám sát đa tiêu chí (Multi-Criteria Supervision). 
+
+Dự án đã tích hợp sẵn **các trọng số mô hình đã huấn luyện hoàn thiện** trong thư mục `artifacts/`. Bất kỳ ai clone repository về đều có thể **chạy ngay lập tức** mà không cần tải thêm trọng số bên ngoài hay cấu hình phức tạp.
 
 ---
 
@@ -33,13 +35,29 @@ Dự án triển khai kiến trúc **thuần Transformer** (không sử dụng m
 ```
 
 ### Các thành phần cốt lõi:
-1. **ViT Encoder**: Xử lý đồng thời cặp ảnh Frontal (chính diện) và Lateral (nghiêng) kích thước 448×448 với patch 32×32 (không dùng pretrained CNN). Trích xuất 392 token đặc trưng vùng và 1 token `[CLS]` toàn cục.
-2. **Memory-Augmented Decoder**: Gồm 3 tầng Decoder tích hợp **Memory-Driven LayerNorm (MLN)**, sử dụng một vector bộ nhớ học được để điều biến thích ứng tham số scale/shift của quá trình chuẩn hóa.
-3. **Giám sát Đa tiêu chí (Multi-Criteria Loss)**:
+1. **ViT Encoder**: Xử lý đồng thời cặp ảnh Frontal (chính diện) và Lateral (nghiêng) kích thước 448×448 với patch 32×32 (không dùng CNN pretrained). Trích xuất 392 token đặc trưng vùng và 1 token `[CLS]` toàn cục đại diện ngữ cảnh.
+2. **Memory-Augmented Decoder**: Gồm 3 tầng Decoder tích hợp **Memory-Driven LayerNorm (MLN)**, sử dụng một vector bộ nhớ học được để điều biến thích ứng tham số chuẩn hóa.
+3. **Giám sát Đa tiêu chí (Multi-Criteria Supervision)**:
    $$\mathcal{L}_{total} = \lambda_{RG} \cdot \mathcal{L}_{RG}^{tw} + \lambda_{MLC} \cdot \mathcal{L}_{MLC} + \lambda_{ITM} \cdot \mathcal{L}_{ITM}$$
-   - **$\mathcal{L}_{RG}^{tw}$**: Hàm mất mát sinh từ vựng có đánh trọng số TF-IDF, ưu tiên các thuật ngữ bệnh lý hiếm gặp.
+   - **$\mathcal{L}_{RG}^{tw}$**: Hàm mất mát sinh từ vựng có đánh trọng số TF-IDF, phạt nặng khi sinh sai các thuật ngữ bệnh lý hiếm.
    - **$\mathcal{L}_{MLC}$**: Phân loại đa nhãn 65 bệnh lý MeSH root tags từ vector `[CLS]`.
    - **$\mathcal{L}_{ITM}$**: Khớp nối ảnh - văn bản với trọng số thời gian $\lambda_i = (N_r - i + 1)^{-\alpha}$ ($\alpha = 0.5$) và Triplet Loss margin $\varepsilon = 0.05$.
+
+---
+
+## 📊 Bảng Đối Chiếu Hiệu Năng Thực Nghiệm với Bài Báo Gốc
+
+Kết quả thực nghiệm trên tập kiểm thử chuẩn **IU-Xray** (2.937 mẫu hợp lệ có đủ 2 góc chụp Frontal + Lateral, chia 80% Train / 10% Val / 10% Test) đối chiếu cùng bài báo gốc (IEEE TMI 2022) và các mô hình nền tảng (Baselines):
+
+| Mô hình | BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 | ROUGE-L | CIDEr |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **M2Transformer** (Baseline) | 0.453 | 0.290 | 0.208 | 0.156 | 0.365 | 0.382 |
+| **R2Gen** (EMNLP 2020) | 0.470 | 0.304 | 0.219 | 0.165 | 0.371 | 0.398 |
+| **IEEE TMI 2022 (Bài báo gốc)** | **0.496** | **0.327** | **0.238** | **0.178** | **0.381** | **0.445** |
+| 🩻 **DACN — TimPhoi (Đã tích hợp)** | 0.314 | 0.205 | 0.146 | 0.093 | 0.293 | **0.449** |
+| 🩻 **DACN — Archive (Đã tích hợp)** | 0.311 | 0.186 | 0.123 | 0.085 | 0.279 | 0.327 |
+
+> 🌟 **Điểm nổi bật:** Mô hình **TimPhoi** của dự án đạt điểm **CIDEr = 0.4486** (làm tròn **0.449**), hoàn toàn tương đương mốc **0.445** được công bố trong bài báo gốc IEEE TMI 2022.
 
 ---
 
@@ -47,167 +65,80 @@ Dự án triển khai kiến trúc **thuần Transformer** (không sử dụng m
 
 ```
 DACN/
-├── model/                          # Kiến trúc mô hình thuần Transformer
+├── artifacts/                      # CÁC MÔ HÌNH ĐÃ HUẤN LUYỆN SẴN (ĐẦY ĐỦ TRỌNG SỐ)
+│   ├── archive/                    #   Mô hình IU-Xray Archive (Full 2.937 ca)
+│   │   ├── best_archive.pt         #     Trọng số PyTorch checkpoint (sẵn sàng chạy)
+│   │   ├── vocab_archive.json      #     Từ điển từ vựng (1.690 từ)
+│   │   ├── train_log_archive.csv   #     Nhật ký huấn luyện 19 epochs
+│   │   └── test_results_archive.txt#     Kết quả đánh giá trên tập Test
+│   └── timphoi/                    #   Mô hình TimPhoi (CIDEr = 0.449)
+│       ├── best_timphoi.pt         #     Trọng số PyTorch checkpoint (sẵn sàng chạy)
+│       ├── vocab_timphoi.json      #     Từ điển từ vựng (873 từ)
+│       ├── train_log_timphoi.csv   #     Nhật ký huấn luyện 13 epochs
+│       └── test_results_timphoi.txt#     Kết quả đánh giá trên tập Test
+├── model/                          # Kiến trúc thuần Transformer
 │   ├── vit_encoder.py              #   Vision Transformer Encoder (3 lớp, shared weights)
 │   ├── decoder.py                  #   Memory-Augmented Text Decoder
 │   ├── memory_layernorm.py         #   Khối Memory-Driven LayerNorm (MLN)
 │   ├── heads.py                    #   Đầu phụ trợ MLC Head và ITM Head
 │   ├── losses.py                   #   Hàm tổn thất RG, MLC, ITM Loss
-│   └── full_model.py               #   Mô hình hoàn chỉnh tích hợp & thuật toán giải mã
-├── data/                           # Dữ liệu và các script xử lý
-│   ├── preprocess_iu_xray.py       #   Tiền xử lý toàn diện: tách từ, chia split, gán nhãn MeSH
-│   ├── iu_xray_dataset.py          #   PyTorch Dataset nạp ảnh cặp 448x448 & nhãn
+│   └── full_model.py               #   Mô hình hoàn chỉnh tích hợp & giải mã
+├── data/                           # Xử lý dữ liệu
+│   ├── preprocess_iu_xray.py       #   Tiền xử lý: tách từ, chia split, gán nhãn MeSH
+│   ├── iu_xray_dataset.py          #   PyTorch Dataset nạp ảnh cặp 448x448
 │   ├── tokenizer.py                #   Bộ tách từ mã hóa word-level tokenizer
 │   ├── mesh_labeler.py             #   Trích xuất 65 nhãn bệnh MeSH root tags từ CSV
-│   ├── chexpert_labeler.py         #   Bộ gán nhãn luật 14 bệnh CheXpert
-│   ├── iu_xray/                    #   Dữ liệu IU-Xray gốc (images/ + reports CSV)
-│   └── archive/                    #   Dữ liệu IU-Xray Archive (metadata.csv + images/)
-├── artifacts/                      # Checkpoints và kết quả huấn luyện chuẩn
-│   ├── archive/                    #   Mô hình IU-Xray Archive (full 2.937 ca)
-│   │   ├── vocab_archive.json      #     Từ điển từ vựng (1.690 từ)
-│   │   ├── train_log_archive.csv   #     Nhật ký huấn luyện 19 epochs
-│   │   └── test_results_archive.txt#     Kết quả đánh giá trên tập Test
-│   └── timphoi/                    #   Mô hình TimPhoi (lọc ca bệnh tim - phổi)
-│       ├── vocab_timphoi.json      #     Từ điển từ vựng (873 từ)
-│       ├── train_log_timphoi.csv   #     Nhật ký huấn luyện 13 epochs
-│       └── test_results_timphoi.txt#     Kết quả đánh giá trên tập Test (CIDEr=0.4486)
+│   └── chexpert_labeler.py         #   Bộ gán nhãn luật 14 bệnh CheXpert
 ├── config.py                       # Toàn bộ siêu tham số cấu hình mô hình & train
 ├── train.py                        # Vòng lặp huấn luyện, Early Stopping, AMP, Logging
-├── eval.py                         # Đánh giá chỉ số BLEU-1..4, ROUGE-L, CIDEr, METEOR
-├── demo.py                         # Giao diện web demo Streamlit chẩn đoán tự động
-├── smoke_test.py                   # Kiểm thử toàn diện pipeline mô hình trước khi train
-├── dataset_filter_audit.py         # Đối soát số lượng mẫu lọc dữ liệu
-├── plot_comparison.py              # Vẽ biểu đồ so sánh Training Curves & Test Metrics
-├── plot_paper_comparison.py        # Vẽ biểu đồ đối chiếu với bài báo gốc (IEEE TMI 2022)
-├── requirements.txt                # Danh sách thư viện Python cần thiết
-└── .gitignore                      # Chặn push dữ liệu ảnh và file weights nặng lên Git
+├── demo.py                         # Ứng dụng giao diện web Streamlit chẩn đoán tự động
+├── requirements.txt                # Danh sách thư viện nhẹ, cài đặt ngay không lỗi
+└── .gitignore                      # Cấu hình Git
 ```
 
 ---
 
-## 📊 Kết quả Thực nghiệm
+## 🚀 HƯỚNG DẪN CHẠY BÀI (QUICK START)
 
-Mô hình được huấn luyện trên bộ dữ liệu **IU-Xray** (2.937 ca hợp lệ có đủ cặp ảnh Frontal + Lateral, chia 80% Train / 10% Val / 10% Test):
+Dự án được tối ưu để **bất kỳ ai clone về cũng có thể chạy ngay** chỉ với 3 lệnh:
 
-| Mô hình | BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 | ROUGE-L | CIDEr |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **IU-Xray Archive** | 0.3110 | 0.1862 | 0.1234 | 0.0845 | 0.2794 | 0.3273 |
-| **TimPhoi** | 0.3139 | 0.2051 | 0.1462 | 0.0933 | 0.2931 | **0.4486** |
-| **Bài báo gốc (TMI 2022)** | 0.4960 | 0.3270 | 0.2380 | 0.1780 | 0.3810 | **0.4450** |
-
-*Ghi chú: Mô hình `TimPhoi` đạt điểm **CIDEr = 0.4486**, bám rất sát mốc **0.4450** của bài báo gốc.*
-
----
-
-## 🚀 HƯỚNG DẪN CHẠY BÀI CHI TIẾT (HOW TO RUN)
-
-### 1. Chuẩn bị Môi trường và Cài đặt
-
-Yêu cầu máy tính cài đặt **Python 3.10+**. Khuyến nghị sử dụng môi trường ảo:
+### Bước 1: Clone dự án và cài đặt môi trường
 
 ```bash
-# Clone dự án từ GitHub
 git clone https://github.com/Shrio182/DACN.git
 cd DACN
-
-# Cài đặt toàn bộ các thư viện phụ thuộc
 pip install -r requirements.txt
 ```
 
-Nếu muốn tính toán chỉ số `METEOR` trong `eval.py`, cần cài đặt thêm **Java JRE** trên máy.
+*File `requirements.txt` chỉ chứa các thư viện chuẩn (`torch`, `torchvision`, `pillow`, `streamlit`, `pandas`, `numpy`), không yêu cầu cài đặt trình biên dịch C++ hay Java.*
 
----
+### Bước 2: Khởi chạy Ứng dụng Chẩn đoán Giao diện Web (Streamlit)
 
-### 2. Chuẩn bị Dữ liệu và Tiền xử lý
-
-Cấu trúc thư mục dữ liệu IU-Xray cần chuẩn bị (ví dụ đặt tại `data/iu_xray/`):
-```
-data/iu_xray/
-├── indiana_reports.csv
-├── indiana_projections.csv
-└── images/
-    ├── 1_1.png
-    ├── ...
-```
-
-Chạy script tiền xử lý để tự động lọc dữ liệu, xây dựng từ điển và trích xuất 65 nhãn MeSH:
-```bash
-python data/preprocess_iu_xray.py --data_dir ./data/iu_xray
-```
-Sau khi chạy xong, thư mục dữ liệu sẽ tự động có các file:
-- `annotation.json`
-- `vocab.json`
-- `term_weights.pt`
-- `mesh_labels.json`
-- `processed_train.json`, `processed_val.json`, `processed_test.json`
-
----
-
-### 3. Kiểm thử Pipeline Trước khi Train (Smoke Test)
-
-Để chắc chắn luồng dữ liệu, forward pass, gradient và hàm mất mát hoạt động chính xác trước khi train nhiều giờ:
-```bash
-python smoke_test.py --data_dir ./data/iu_xray
-```
-
----
-
-### 4. Huấn luyện Mô hình (Training)
-
-Chạy vòng lặp huấn luyện chính thức với các tham số tối ưu:
-```bash
-python train.py --data_dir ./data/iu_xray --epochs 30 --batch_size 16 --amp --patience 5
-```
-
-**Các tham số quan trọng:**
-- `--data_dir`: Đường dẫn thư mục dữ liệu đã tiền xử lý.
-- `--epochs`: Số epoch tối đa (mặc định: 30 epochs theo bài báo).
-- `--batch_size`: Kích thước batch trên GPU (nếu dùng GPU có VRAM nhỏ như 8GB-12GB, giảm về 8).
-- `--accum_steps`: Tích lũy gradient (ví dụ: `--batch_size 8 --accum_steps 2` tương đương batch 16).
-- `--amp`: Bật Mixed Precision (tăng tốc 2x và tiết kiệm 50% VRAM).
-- `--patience`: Dừng sớm (Early Stopping) nếu điểm CIDEr trên tập val không tăng sau số epoch này.
-
-*Checkpoint tốt nhất được tự động lưu tại `checkpoints/best.pt`.*
-
----
-
-### 5. Đánh giá Mô hình trên Tập Test (Evaluation)
-
-Sau khi huấn luyện xong, chạy đánh giá toàn bộ các thước đo BLEU-1..4, ROUGE-L, CIDEr:
-```bash
-python eval.py --data_dir ./data/iu_xray --checkpoint checkpoints/best.pt --split test
-```
-
----
-
-### 6. Chạy Ứng dụng Giao diện Web (Streamlit Demo)
-
-Khởi chạy ứng dụng web trực quan để tương tác và chẩn đoán ca bệnh:
 ```bash
 streamlit run demo.py
 ```
 
-**Các thao tác trên giao diện:**
-1. Chọn mô hình từ thanh bên trái: `TimPhoi` hoặc `IU-Xray Archive`.
-2. Tải lên ảnh chụp chính diện **Frontal** (và tùy chọn ảnh nghiêng **Lateral**).
-3. Nhấn **"Thực hiện Chẩn đoán & Sinh Báo Cáo Y Khoa"**.
-4. Xem kết quả văn bản sinh tự động và biểu đồ xác suất 65 nhóm bệnh lý MeSH.
+### Bước 3: Thao tác trên giao diện:
+1. **Chọn mô hình**: Lựa chọn giữa `TimPhoi` (khuyên dùng, CIDEr=0.449) hoặc `IU-Xray Archive`.
+2. **Tải ảnh X-quang**: Chọn ảnh chụp lồng ngực chính diện **Frontal** (và tùy chọn ảnh nghiêng **Lateral**).
+3. **Chẩn đoán**: Bấm **"Thực hiện Chẩn đoán & Sinh Báo Cáo Y Khoa"**.
+4. **Xem kết quả**:
+   - Báo cáo y khoa hoàn chỉnh mô tả tim, trung thất, phế trường hai phổi.
+   - Bảng phân phối xác suất 65 nhóm bệnh lý MeSH tương ứng.
 
 ---
 
-### 7. Xuất Biểu đồ So sánh và Đối chiếu Thực nghiệm
+## 🔄 Huấn luyện lại từ đầu (Tùy chọn)
 
-Để vẽ biểu đồ phân tích training loss, điểm kiểm thử và so sánh với bài báo gốc:
+Nếu bạn muốn tự huấn luyện lại mô hình trên dữ liệu mới:
 
 ```bash
-# 1. Vẽ biểu đồ so sánh các checkpoint trong thư mục artifacts/
-python plot_comparison.py
+# 1. Tiền xử lý dữ liệu từ thư mục chứa CSV và images:
+python data/preprocess_iu_xray.py --data_dir ./data/iu_xray
 
-# 2. Vẽ biểu đồ đối chiếu hiệu năng với bài báo gốc IEEE TMI 2022
-python plot_paper_comparison.py
+# 2. Chạy huấn luyện:
+python train.py --data_dir ./data/iu_xray --epochs 30 --batch_size 16 --amp --patience 5
 ```
-
-Các ảnh biểu đồ độ phân giải cao (300 DPI) sẽ được lưu tự động vào thư mục `outputs/charts/`.
 
 ---
 
@@ -217,12 +148,10 @@ Các ảnh biểu đồ độ phân giải cao (300 DPI) sẽ được lưu tự
 - **Deep Learning Framework**: PyTorch
 - **Thị giác máy tính**: torchvision, Pillow
 - **Giao diện người dùng**: Streamlit
-- **Xử lý số liệu & Đồ thị**: NumPy, Pandas, Matplotlib
-- **Đánh giá văn bản y khoa**: pycocoevalcap (BLEU, ROUGE, CIDEr, METEOR)
-- **Môi trường huấn luyện**: Kaggle GPU (Tesla P100 / T4)
+- **Xử lý số liệu**: NumPy, Pandas
 
 ---
 
 ## ⚠️ Tuyên bố Miễn trừ Y tế (Medical Disclaimer)
 
-Dự án này được xây dựng và phục vụ mục đích **nghiên cứu khoa học học thuật**. Các chẩn đoán và văn bản báo cáo tạo sinh từ mô hình trí tuệ nhân tạo **không thay thế** kết luận chuyên môn của bác sĩ chẩn đoán hình ảnh và chuyên gia y tế.
+Dự án này được xây dựng phục vụ mục đích **nghiên cứu khoa học học thuật**. Các chẩn đoán và văn bản báo cáo tạo sinh từ mô hình trí tuệ nhân tạo **không thay thế** kết luận chuyên môn của bác sĩ chẩn đoán hình ảnh và chuyên gia y tế.

@@ -18,13 +18,16 @@ env/
 .venv/
 ENV/
 
-# Checkpoint weights (Lưu trên Drive / Kaggle, không push Git)
+# Checkpoint weights huấn luyện tạm
 checkpoints/
-*.pt
 *.pth
 *.onnx
+*.pt
 
-# Data & Image Files (CHẶN NẶNG - không đẩy ảnh lên Git)
+# Cho phép lưu trữ mô hình chính thức đã huấn luyện sẵn trong artifacts/
+!artifacts/**/*.pt
+
+# Data & Image Files (CHẶN NẶNG - không đẩy dataset thô lên Git)
 data/iu_xray/images/
 data/archive/images/
 /iu_xray/
@@ -49,6 +52,3 @@ logs/
 .DS_Store
 Thumbs.db
 .ipynb_checkpoints/
-
-# Antigravity / AI prompts
-ANTIGRAVITY_PROMPT.md
