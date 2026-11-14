@@ -119,8 +119,9 @@ pip install -r requirements.txt
 ### Bước 2: Khởi chạy Ứng dụng Chẩn đoán Giao diện Web (Streamlit)
 
 ```bash
-streamlit run demo.py
+python -m streamlit run demo.py
 ```
+*(Hoặc `streamlit run demo.py` nếu đã cấu hình biến môi trường PATH)*
 
 ### Bước 3: Thao tác trên giao diện:
 1. **Chọn mô hình**: Lựa chọn giữa `TimPhoi` (khuyên dùng, CIDEr=0.449) hoặc `IU-Xray Archive`.
