@@ -1,20 +1,13 @@
-"""
-demo.py — Ứng dụng Streamlit chẩn đoán và sinh báo cáo X-quang y tế tự động.
-============================================================================
-Tái hiện paper IEEE TMI 2022:
-"Automated Radiographic Report Generation Purely on Transformer:
- A Multicriteria Supervised Approach"
-
-Hỗ trợ:
-  - Lựa chọn linh hoạt mô hình trong artifacts/ (IU-Xray Archive, TimPhoi, MIMIC-CXR).
-  - Tự động nhận diện thiết bị (CUDA/CPU) và kích thước từ vựng (vocab_size).
-  - Nhập 2 góc chụp X-quang (Frontal + Lateral) với độ phân giải chuẩn 448×448.
-  - Sinh báo cáo y khoa (Generated Report) hỗ trợ Beam Search & Repetition Penalty.
-  - Hiển thị xác suất phân loại đa nhãn bệnh (Multi-Label Disease Probabilities).
-
-Chạy:
-  streamlit run demo.py
-"""
+# demo.py
+# Ứng dụng giao diện web Streamlit phục vụ chẩn đoán hình ảnh và tự động sinh báo cáo X-quang y tế.
+# Tái hiện bài báo: "Automated Radiographic Report Generation Purely on Transformer:
+#                   A Multicriteria Supervised Approach" (IEEE TMI 2022).
+#
+# Tính năng chính:
+# 1. Tự động phát hiện các mô hình huấn luyện trong thư mục artifacts/ (TimPhoi, IU-Xray Archive).
+# 2. Hỗ trợ tải lên cặp ảnh Frontal + Lateral (chuẩn hóa độ phân giải 448x448 Grayscale).
+# 3. Tự động sinh báo cáo y khoa hoàn chỉnh mô tả các vùng giải phẫu (Tim, Trung thất, Phổi).
+# 4. Hiển thị xác suất phân loại 65 nhóm bệnh lý MeSH bằng thanh tiến trình trực quan.
 
 import os
 import sys
@@ -163,7 +156,7 @@ def load_trained_model(checkpoint_path: str, vocab_path: str):
 
 
 def preprocess_xray_image(img: Image.Image, img_size: int = 448) -> torch.Tensor:
-    """Chuẩn hóa ảnh X-quang theo đúng chuẩn đầu vào ViT Encoder (Grayscale 448×448)."""
+    # Chuẩn hóa ảnh X-quang theo chuẩn đầu vào ViT Encoder (Grayscale 1 kênh, resize 448x448)
     tfm = transforms.Compose([
         transforms.Grayscale(num_output_channels=1),
         transforms.Resize((img_size, img_size)),

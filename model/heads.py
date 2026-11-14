@@ -1,42 +1,35 @@
-"""
-heads.py
---------
-Hai head phụ trợ trong paper:
-1. MLC head (Multi-Label Classification): Norm & Linear Projection từ CLS token
-   -> dự đoán nhãn bệnh.
-2. ITM head (Image-Text Matching): tính per-token similarity giữa ảnh & văn bản,
-   áp dụng temporal weighting theo vị trí token (Eq.10-11 paper),
-   trả về similarity matrix (B, B) dùng cho triplet loss (Eq.8-9).
+# heads.py
+# Các đầu dự đoán phụ trợ (Auxiliary Heads) cho mô hình giám sát đa tiêu chí:
+# 1. MLC Head (Multi-Label Classification): Dự đoán xác suất các nhãn bệnh lý (MeSH tags).
+# 2. ITM Head (Image-Text Matching): Ghép nối sự tương đồng giữa ảnh và từng từ trong báo cáo,
+#    kèm cơ chế trọng số thời gian theo vị trí từ (Temporal Weighting theo Công thức 10-11).
 
-   Temporal weighting: lambda_i = (N_r - i + 1) ** (-alpha)
-   Weighted similarity: S(I,T) = sum(lambda_i * s_i) / sum(lambda_i)
-   với alpha=0.5, N_r = số token hợp lệ, i = vị trí token.
-"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 class MLCHead(nn.Module):
+    # Đầu phân loại đa nhãn bệnh lý từ vector CLS toàn cục của ảnh X-quang
     def __init__(self, d_model: int, num_labels: int):
         super().__init__()
         self.norm = nn.LayerNorm(d_model)
         self.proj = nn.Linear(d_model, num_labels)
 
     def forward(self, cls_token: torch.Tensor) -> torch.Tensor:
-        return self.proj(self.norm(cls_token))   # (B, num_labels) logits
+        # Đầu vào: cls_token (B, d_model) trích xuất từ ViT Encoder
+        # Đầu ra: Logits chưa qua hàm sigmoid có kích thước (B, num_labels)
+        return self.proj(self.norm(cls_token))
 
 
 class ITMHead(nn.Module):
-    """ITM head với per-token similarity + temporal weighting (Eq.10-11).
-
-    Quy trình:
-    1. Project img_cls → itm_dim, project mỗi txt token → itm_dim
-    2. Tính per-token similarity s_i = dot(img_proj, txt_proj_i)
-    3. Áp dụng temporal weight: lambda_i = (N_r - i + 1) ** (-alpha)
-    4. Weighted similarity: S(I,T) = sum(lambda_i * s_i) / sum(lambda_i)
-    5. Kết quả: similarity matrix (B, B) cho triplet loss
-    """
+    # Đầu so khớp ảnh - văn bản với trọng số thời gian (Temporal-Weighted ITM)
+    # Quy trình toán học theo Công thức 10 và 11 của bài báo gốc:
+    # 1. Chiếu vector CLS ảnh và đặc trưng từng từ văn bản sang không gian tương đồng d_itm (512).
+    # 2. Chuẩn hóa L2 rồi tính độ tương đồng cosine từng từ: s_i = dot(img, txt_i).
+    # 3. Tính trọng số thời gian tăng dần về cuối câu: lambda_i = (N_r - i + 1) ** (-alpha).
+    #    (Các từ ở cuối câu thường là kết luận bệnh lý quan trọng nhất nên nhận trọng số cao).
+    # 4. Trả về ma trận tương đồng (B, B) để tối ưu Triplet Loss.
     def __init__(self, d_model: int, itm_dim: int, temporal_alpha: float = 0.5):
         super().__init__()
         self.img_proj = nn.Linear(d_model, itm_dim)
@@ -45,38 +38,35 @@ class ITMHead(nn.Module):
 
     def forward(
         self,
-        img_cls: torch.Tensor,        # (B, d_model) — CLS global từ encoder
-        txt_features: torch.Tensor,    # (B, T, d_model) — per-token fused features từ decoder
-        padding_mask: torch.Tensor,    # (B, T) — True = token hợp lệ, False = padding
+        img_cls: torch.Tensor,        # (B, d_model) - vector CLS toàn cục của ảnh
+        txt_features: torch.Tensor,    # (B, T, d_model) - đặc trưng từng token từ Decoder
+        padding_mask: torch.Tensor,    # (B, T) - True là token hợp lệ, False là token padding
     ) -> torch.Tensor:
-        """Trả về similarity matrix (B, B) — đường chéo là cặp đúng (positive)."""
         B, T, _ = txt_features.shape
 
-        # 1. Linear projection + L2 normalize
+        # Bước 1: Chiếu tuyến tính và chuẩn hóa L2 trên trục vector
         img = F.normalize(self.img_proj(img_cls), dim=-1)          # (B, itm_dim)
         txt = F.normalize(self.txt_proj(txt_features), dim=-1)     # (B, T, itm_dim)
 
-        # 2. Per-token similarity cho MỌI cặp (image_i, text_j):
-        #    s[i, j, t] = dot(img[i], txt[j, t])
-        per_token_sim = torch.einsum('id,jtd->ijt', img, txt)     # (B, B, T)
+        # Bước 2: Tính tích vô hướng tương đồng giữa mọi cặp ảnh i và văn bản j
+        # sim_per_token[i, j, t] là độ tương đồng giữa ảnh i và token t của văn bản j
+        sim_per_token = torch.einsum("bd,jtd->bjt", img, txt)      # (B, B, T)
 
-        # 3. Temporal weighting: lambda_i = (N_r - i + 1) ** (-alpha)
-        #    N_r = số token hợp lệ của mỗi text sample j
-        N_r = padding_mask.float().sum(dim=1)                      # (B,)
-        positions = torch.arange(T, device=txt.device).float()     # (T,)
+        # Bước 3: Tính trọng số thời gian lambda_i = (N_r - i + 1)^(-alpha)
+        # N_r là số token thực tế trong câu của mẫu j (loại trừ các token padding)
+        valid_lengths = padding_mask.sum(dim=-1)                   # (B,)
+        pos = torch.arange(T, device=txt_features.device).unsqueeze(0).expand(B, -1)  # (B, T)
+        dist_to_end = (valid_lengths.unsqueeze(1) - pos).float()   # N_r - i + 1
 
-        # lambda_weights[j, t] = (N_r[j] - t + 1) ** (-alpha) nếu token hợp lệ, 0 nếu padding
-        # Clamp để tránh giá trị âm hoặc 0 khi t >= N_r
-        raw_weights = (N_r.unsqueeze(1) - positions.unsqueeze(0) + 1.0)  # (B, T)
-        raw_weights = raw_weights.clamp(min=1e-8) ** (-self.temporal_alpha)
-        lambda_weights = raw_weights * padding_mask.float()        # (B, T) — zero out padding
+        # Gán trọng số 0 cho các vị trí padding hoặc vượt quá độ dài câu
+        valid_pos_mask = (dist_to_end >= 1.0) & padding_mask       # (B, T)
+        dist_to_end_safe = dist_to_end.clamp(min=1.0)
+        temporal_weights = dist_to_end_safe.pow(-self.temporal_alpha) * valid_pos_mask.float()
 
-        # 4. Chuẩn hoá: lambda_norm[j, t] = lambda[j,t] / sum_t(lambda[j,t])
-        lambda_sum = lambda_weights.sum(dim=1, keepdim=True).clamp(min=1e-8)  # (B, 1)
-        lambda_norm = lambda_weights / lambda_sum                  # (B, T)
+        # Bước 4: Tính trung bình có trọng số độ tương đồng ảnh-văn bản: S(I, T) = sum(w * s) / sum(w)
+        w = temporal_weights.unsqueeze(0).expand(B, -1, -1)         # (B, B, T)
+        w_sum = w.sum(dim=-1).clamp(min=1e-6)                       # (B, B)
+        sim_matrix = (sim_per_token * w).sum(dim=-1) / w_sum        # (B, B)
 
-        # 5. Weighted similarity: S[i, j] = sum_t(lambda_norm[j, t] * s[i, j, t])
-        #    lambda_norm shape (B_txt, T) -> unsqueeze(0) -> (1, B_txt, T) for broadcasting
-        sim_matrix = (per_token_sim * lambda_norm.unsqueeze(0)).sum(dim=2)  # (B, B)
-
+        # Trả về ma trận đối sánh: đường chéo chính (i == j) là các cặp khớp đúng (Positive pairs)
         return sim_matrix

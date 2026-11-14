@@ -1,15 +1,9 @@
-"""
-plot_comparison.py — Vẽ biểu đồ so sánh Training Curves và Test Metrics giữa các mô hình.
-========================================================================================
-Đọc tự động toàn bộ artifacts/*/:
-  - train_log_*.csv: Loss & Validation CIDEr theo epoch
-  - test_results_*.txt: Điểm test (BLEU-1..4, ROUGE-L, CIDEr, METEOR)
-
-Xuất ảnh chất lượng cao 300 DPI vào outputs/charts/:
-  1. training_curves_comparison.png: Đường so sánh Training Loss & Val CIDEr
-  2. test_metrics_bar_chart.png: Cột so sánh các điểm Test giữa các bộ dữ liệu
-  3. overall_benchmark_dashboard.png: Dashboard tổng hợp phục vụ báo cáo / bài báo
-"""
+# plot_comparison.py
+# Kịch bản trực quan hóa so sánh đường cong huấn luyện và hiệu năng đánh giá giữa các mô hình.
+# Tự động quét toàn bộ thư mục artifacts/*/ để đọc:
+#   - train_log_*.csv: Tiến trình giảm hàm mất mát (Loss) và tăng điểm CIDEr qua từng Epoch.
+#   - test_results_*.txt: Bộ chỉ số đánh giá đầy đủ trên tập Test (BLEU-1..4, ROUGE-L, CIDEr, METEOR).
+# Xuất biểu đồ chuẩn báo cáo khoa học độ phân giải 300 DPI vào thư mục outputs/charts/.
 
 import os
 import re
@@ -45,7 +39,7 @@ def get_color(key: str, idx: int = 0) -> str:
 
 
 def find_artifact_models(artifacts_dir: str = "artifacts"):
-    """Quét thư mục artifacts/ để tìm các mô hình có log và kết quả."""
+    # Quét thư mục artifacts/ để tìm các mô hình có log và kết quả
     models_data = {}
     if not os.path.exists(artifacts_dir):
         print(f"[CẢNH BÁO] Không tìm thấy thư mục {artifacts_dir}")
@@ -78,7 +72,7 @@ def find_artifact_models(artifacts_dir: str = "artifacts"):
 
 
 def parse_train_log(csv_path: str):
-    """Đọc file train_log_*.csv và lọc lấy epoch, loss, val_cider."""
+    # Đọc file train_log_*.csv và lọc lấy epoch, loss, val_cider
     if not csv_path or not os.path.exists(csv_path):
         return None
 
@@ -105,7 +99,7 @@ def parse_train_log(csv_path: str):
 
 
 def parse_test_results(txt_path: str):
-    """Đọc file test_results_*.txt và trích xuất điểm số các metrics."""
+    # Đọc file test_results_*.txt và trích xuất điểm số các metrics
     if not txt_path or not os.path.exists(txt_path):
         return {}
 
@@ -126,7 +120,7 @@ def parse_test_results(txt_path: str):
 
 
 def plot_training_curves(models_data: dict, output_dir: str):
-    """Vẽ 2 biểu đồ đường so sánh Training Loss và Validation CIDEr."""
+    # Vẽ 2 biểu đồ đường so sánh Training Loss và Validation CIDEr
     fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), dpi=300)
     fig.patch.set_facecolor("#ffffff")
 
@@ -200,7 +194,7 @@ def plot_training_curves(models_data: dict, output_dir: str):
 
 
 def plot_test_metrics_bar(models_data: dict, output_dir: str):
-    """Vẽ biểu đồ cột so sánh điểm Test giữa các bộ dữ liệu."""
+    # Vẽ biểu đồ cột so sánh điểm Test giữa các bộ dữ liệu
     metric_keys = ["BLEU-1", "BLEU-2", "BLEU-3", "BLEU-4", "ROUGE-L", "CIDEr", "METEOR"]
     models_scores = {}
 
@@ -269,7 +263,7 @@ def plot_test_metrics_bar(models_data: dict, output_dir: str):
 
 
 def plot_overall_dashboard(models_data: dict, output_dir: str):
-    """Vẽ dashboard tổng hợp kết hợp training loss, val cider và bảng metrics."""
+    # Vẽ dashboard tổng hợp kết hợp training loss, val cider và bảng metrics
     fig = plt.figure(figsize=(16, 10), dpi=300)
     fig.patch.set_facecolor("#ffffff")
     gs = fig.add_gridspec(2, 2, height_ratios=[1.1, 1.0], hspace=0.3, wspace=0.22)

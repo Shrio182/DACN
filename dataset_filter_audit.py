@@ -1,7 +1,7 @@
-"""
-dataset_filter_audit.py — Kiểm tra chi tiết lý do dataset đạt 2937 thay vì 3195.
-Chạy: python dataset_filter_audit.py
-"""
+# dataset_filter_audit.py
+# Kịch bản kiểm tra chi tiết quy trình lọc và phân tách dữ liệu của IU-Xray.
+# Đối soát số lượng mẫu thực tế (2.937 mẫu hợp lệ có đủ cặp ảnh và 2 phần Findings/Impression)
+# so với con số ~3.195 mẫu được nhóm tác giả đề cập trong bài báo gốc.
 import csv
 import os
 import argparse

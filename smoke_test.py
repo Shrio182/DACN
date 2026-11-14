@@ -1,18 +1,12 @@
-"""
-smoke_test.py — Kiểm thử toàn diện trước khi train lại.
-========================================================
-Kiểm tra:
-1. Forward trên batch thật (từ dataset)
-2. Shape per-token decoder features
-3. Temporal weights tăng theo token position
-4. Padding tokens bị loại khỏi weighted similarity
-5. Positive/negative similarities
-6. RG, MLC, ITM losses đều hữu hạn
-7. Total loss = đúng trọng số
-8. Optimizer step: model parameters được cập nhật
-
-Chạy: python smoke_test.py --data_dir ./iu_xray_data
-"""
+# smoke_test.py
+# Kịch bản kiểm thử toàn diện quy trình xử lý trước khi tiến hành huấn luyện.
+# Các bước kiểm thử tự động:
+# 1. Forward pass trên một batch dữ liệu thật nạp từ Dataset.
+# 2. Kiểm tra kích thước ma trận đặc trưng vùng và vector CLS toàn cục.
+# 3. Kiểm tra tính tăng dần của trọng số thời gian Temporal Weights theo vị trí từ.
+# 4. Xác nhận các token padding bị loại bỏ chính xác khỏi ma trận tương đồng ITM.
+# 5. Kiểm tra tính hữu hạn của cả 3 thành phần hàm mất mát: L_RG, L_MLC, L_ITM.
+# 6. Kiểm tra lan truyền ngược (Backward Pass) và cập nhật gradient của Optimizer.
 import os
 import json
 import argparse

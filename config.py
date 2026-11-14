@@ -1,66 +1,59 @@
-"""
-config.py
----------
-Toàn bộ siêu tham số của model và quá trình train tập trung ở đây.
-Tuân thủ đúng paper IEEE TMI 2022 (Table I & Eq.12).
-"""
+# config.py
+# Tập hợp toàn bộ siêu tham số cấu hình của mô hình và quá trình huấn luyện
+# Tuân thủ chặt chẽ theo Bảng I và Công thức 12 trong bài báo IEEE TMI 2022.
+
 from dataclasses import dataclass
 
 
 @dataclass
 class ModelConfig:
-    # --- Ảnh đầu vào (paper: 448×448, patch 32) ---
-    img_size: int = 448            # paper: resize về 448×448
-    patch_size: int = 32           # paper: patch size = 32 → (448/32)²=196 patches
-    in_channels: int = 1           # ảnh X-quang grayscale = 1
+    # --- Cấu hình ảnh đầu vào (IEEE TMI 2022: 448x448, patch 32x32) ---
+    img_size: int = 448            # Kích thước ảnh chuẩn hóa: 448 x 448
+    patch_size: int = 32           # Kích thước mỗi patch vuông: 32 x 32 -> (448/32)^2 = 196 patches/view
+    in_channels: int = 1           # Ảnh X-quang Grayscale 1 kênh
 
-    # --- Kích thước model (paper: d=512, 8 heads, 3 lớp) ---
-    d_model: int = 512             # chiều ẩn chung của encoder & decoder
-    nhead: int = 8                 # paper: 8 attention heads
-    num_encoder_layers: int = 3    # paper: 3 lớp Vision Encoder
-    num_decoder_layers: int = 3    # paper: 3 lớp Text Decoder
-    dim_feedforward: int = 2048
-    dropout: float = 0.1
+    # --- Kích thước mô hình Transformer (d_model = 512, 8 heads, 3 tầng) ---
+    d_model: int = 512             # Chiều vector ẩn chung cho cả Encoder và Decoder
+    nhead: int = 8                 # Số lượng cơ chế tập trung (Attention Heads)
+    num_encoder_layers: int = 3    # 3 lớp Vision Transformer Encoder
+    num_decoder_layers: int = 3    # 3 lớp Memory-Augmented Text Decoder
+    dim_feedforward: int = 2048    # Chiều ẩn của mạng FFN
+    dropout: float = 0.1           # Tỉ lệ Dropout chống quá khớp (Overfitting)
 
-    # --- Báo cáo văn bản ---
-    max_seq_len: int = 60          # paper: độ dài báo cáo tối đa = 60 từ
-    vocab_size: int = 1000         # sẽ cập nhật từ vocab.json sau preprocess
-    pad_idx: int = 0               # idx của token <pad>
+    # --- Cấu hình văn bản báo cáo ---
+    max_seq_len: int = 60          # Độ dài chuỗi từ tối đa của báo cáo y khoa (60 từ)
+    vocab_size: int = 1000         # Kích thước từ vựng (tự động cập nhật theo vocab.json)
+    pad_idx: int = 0               # Mã ID của token đệm <pad>
 
-    # --- Nhãn bệnh (Multi-Label Classification) ---
-    # IU-Xray: dùng MeSH root tags thực tế (xem mesh_labeler.py).
-    # Số lớp được tự động cập nhật từ mesh_labels.json sau preprocess.
-    # Paper: 14 structured labels chỉ áp dụng cho MIMIC-CXR, KHÔNG phải IU-Xray.
-    num_mlc_labels: int = 65       # default ~65 MeSH root tags (min_freq=10)
+    # --- Phân loại bệnh lý đa nhãn (Multi-Label Classification) ---
+    # IU-Xray sử dụng 65 nhãn MeSH root tags trích xuất thực tế từ dữ liệu
+    num_mlc_labels: int = 65
 
-    # --- Memory-driven LayerNorm (đặc trưng của paper) ---
-    memory_dim: int = 64           # chiều của vector memory điều khiển LN
+    # --- Chuẩn hóa lớp điều khiển bởi bộ nhớ (Memory-Driven LayerNorm) ---
+    memory_dim: int = 64           # Chiều của vector bộ nhớ điều khiển tham số chuẩn hóa
 
-    # --- Image-Text Matching (ITM) ---
-    itm_dim: int = 512
+    # --- Ghép nối ảnh - văn bản (Image-Text Matching) ---
+    itm_dim: int = 512             # Chiều không gian biểu diễn chung giữa ảnh và từ vựng
+    use_paired_views: bool = True   # IU-Xray luôn sử dụng cặp 2 góc chụp (Frontal + Lateral)
 
-    # --- IU-Xray: luôn dùng 2 view (frontal + lateral) ---
-    use_paired_views: bool = True   # paper: IU-Xray dùng cả 2 góc chụp
-
-    # --- Temporal weighting cho ITM (Eq.10-11) ---
-    # Áp dụng theo VỊ TRÍ TOKEN trong report: w(t) = 2σ(α·t) − 1
-    # Token ở cuối report (chứa kết luận quan trọng) được trọng số cao hơn
-    temporal_alpha: float = 0.5     # paper: α = 0.5
+    # Trọng số thời gian tăng dần về cuối báo cáo theo Công thức 10-11: w(t) = 2*sigmoid(alpha*t) - 1
+    temporal_alpha: float = 0.5
 
 
 @dataclass
 class TrainConfig:
-    batch_size: int = 16            # paper: mini-batch = 16
-    epochs: int = 30                # paper: train 30 epochs
-    lr_encoder: float = 5e-5        # paper: lr riêng cho vision encoder
-    lr_rest: float = 1e-4           # paper: lr cho các tham số còn lại
-    weight_decay: float = 1e-4
+    batch_size: int = 16            # Kích thước mini-batch = 16
+    epochs: int = 30                # Huấn luyện trong 30 epochs
+    lr_encoder: float = 5e-5        # Tốc độ học riêng cho Vision Transformer Encoder
+    lr_rest: float = 1e-4           # Tốc độ học cho Text Decoder và các đầu phụ trợ
+    weight_decay: float = 1e-4      # Hệ số suy giảm trọng số L2
 
-    # Trọng số các thành phần loss (Equation 12 trong paper)
-    lambda_rg: float = 1.0          # λ_RG = 1.0
-    lambda_mlc: float = 2.0         # λ_MLC = 2.0 (paper Table I)
-    lambda_itm_max: float = 5.0     # λ_ITM = 5.0 (paper Table I)
+    # Trọng số các thành phần hàm mất mát theo Công thức 12 trong bài báo:
+    # L_total = lambda_rg * L_RG + lambda_mlc * L_MLC + lambda_itm * L_ITM
+    lambda_rg: float = 1.0          # Trọng số mất mát sinh báo cáo
+    lambda_mlc: float = 2.0         # Trọng số mất mát phân loại bệnh lý
+    lambda_itm_max: float = 5.0     # Trọng số mất mát ghép cặp ảnh-văn bản
 
-    # ITM loss hyperparameters (paper Eq.8 & Eq.9)
-    itm_epsilon: float = 0.05       # ε = 0.05: biên độ triplet margin
-    itm_mu: float = 0.025           # μ_ITM = 0.025: L2-regularization cho ITM
+    # Siêu tham số cho hàm mất mát ITM Triplet Loss (Công thức 8 và 9)
+    itm_epsilon: float = 0.05       # Biên cách biệt Triplet Margin
+    itm_mu: float = 0.025           # Hệ số chuẩn hóa Frobenius norm

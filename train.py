@@ -1,19 +1,13 @@
-"""
-train.py — Vòng lặp train.
-==========================
-Yêu cầu cung cấp --data_dir chỉ tới thư mục IU-Xray (chứa annotation.json hoặc indiana_reports.csv + images/).
+# train.py
+# Vòng lặp huấn luyện mô hình Multicriteria Transformer trên dữ liệu IU-Xray.
+# Đặc điểm luồng huấn luyện:
+# - Chia 2 nhóm learning rate riêng biệt: 5e-5 cho Vision Encoder và 1e-4 cho Decoder + Heads.
+# - Hỗ trợ Mixed Precision (AMP) giúp tiết kiệm VRAM và tăng tốc độ tính toán.
+# - Hỗ trợ tích lũy gradient (Gradient Accumulation) mô phỏng batch size lớn.
+# - Tự động đánh giá điểm CIDEr trên tập Validation sau mỗi Epoch.
+# - Cơ chế Early Stopping dừng sớm nếu điểm CIDEr không cải thiện sau N epochs (mặc định: 5).
+# - Lưu checkpoint tốt nhất tại checkpoints/best.pt và ghi lịch sử loss ra logs/train_log.csv.
 
-Tính năng:
-  - Early stopping theo CIDEr trên tập val
-  - Lưu checkpoint tốt nhất thành checkpoints/best.pt
-  - In loss mỗi 10 step
-  - Log CSV đơn giản (logs/train_log.csv)
-  - GIỮ NGUYÊN 2 nhóm learning rate (encoder 5e-5, còn lại 1e-4) và 30 epochs
-
-Ví dụ:
-  python data/preprocess_iu_xray.py --data_dir ./iu_xray_data
-  python train.py --data_dir ./iu_xray_data --epochs 30
-"""
 import os
 import csv
 import time
@@ -28,17 +22,20 @@ from data.iu_xray_dataset import IUXrayDataset
 
 
 def build_optimizer(model, tcfg):
+    # Thiết lập bộ tối ưu Adam với 2 nhóm learning rate riêng theo bài báo
     encoder_params = list(model.encoder.parameters())
     rest_params = [p for n, p in model.named_parameters() if not n.startswith("encoder.")]
     return torch.optim.Adam(
-        [{"params": encoder_params, "lr": tcfg.lr_encoder},
-         {"params": rest_params, "lr": tcfg.lr_rest}],
+        [
+            {"params": encoder_params, "lr": tcfg.lr_encoder},
+            {"params": rest_params, "lr": tcfg.lr_rest},
+        ],
         weight_decay=tcfg.weight_decay,
     )
 
 
 def maybe_preprocess(data_dir):
-    """Nếu chưa có file processed thì tự chạy preprocess."""
+    # Tự động kích hoạt tiền xử lý dữ liệu nếu chưa phát hiện các file processed
     if not os.path.exists(os.path.join(data_dir, "processed_train.json")):
         from data.preprocess_iu_xray import main as preprocess_main
         import sys
@@ -46,15 +43,14 @@ def maybe_preprocess(data_dir):
         preprocess_main()
 
 
-# -------------- Đánh giá CIDEr trên tập val ------------------
 def evaluate_cider_on_val(model, val_loader, tokenizer, device):
-    """Sinh báo cáo trên tập val và tính CIDEr bằng pycocoevalcap."""
+    # Đánh giá chất lượng báo cáo sinh ra trên tập Validation bằng chỉ số CIDEr
     model.eval()
     bos_idx = tokenizer.vocab[BOS]
     eos_idx = tokenizer.vocab[EOS]
 
-    gts = {}  # ground truth
-    res = {}  # generated
+    gts = {}  # Ground-truth tham chiếu
+    res = {}  # Báo cáo mô hình sinh ra
     idx = 0
     with torch.no_grad():
         for images, report_ids, _ in val_loader:
@@ -67,30 +63,31 @@ def evaluate_cider_on_val(model, val_loader, tokenizer, device):
                 res[idx] = [gen_text]
                 idx += 1
 
-    # Tính CIDEr bằng pycocoevalcap
     try:
         from pycocoevalcap.cider.cider import Cider
         cider_scorer = Cider()
         score, _ = cider_scorer.compute_score(gts, res)
         return score
     except Exception as e:
-        print(f"[WARNING] Không tính được CIDEr: {e}. Trả về 0.")
+        print(f"[CẢNH BÁO] Không tính được CIDEr: {e}. Trả về 0.0")
         return 0.0
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data_dir", required=True, help="Thư mục IU-Xray (annotation.json + images/)")
-    ap.add_argument("--epochs", type=int, default=None)
-    ap.add_argument("--batch_size", type=int, default=None, help="Batch thật trên GPU (giảm nếu hết VRAM)")
-    ap.add_argument("--accum_steps", type=int, default=1, help="Gradient accumulation: effective batch = batch_size * accum_steps")
-    ap.add_argument("--amp", action="store_true", help="Bật mixed precision (giảm ~50%% VRAM, cần GPU NVIDIA)")
-    ap.add_argument("--patience", type=int, default=5, help="Early stopping: dừng nếu CIDEr không cải thiện sau N epochs")
+    ap.add_argument("--data_dir", required=True, help="Thư mục chứa IU-Xray đã tiền xử lý")
+    ap.add_argument("--epochs", type=int, default=None, help="Số epoch huấn luyện")
+    ap.add_argument("--batch_size", type=int, default=None, help="Batch size thực trên GPU")
+    ap.add_argument("--accum_steps", type=int, default=1, help="Số bước tích lũy gradient")
+    ap.add_argument("--amp", action="store_true", help="Bật chế độ tính toán số thực nửa chính xác (AMP)")
+    ap.add_argument("--patience", type=int, default=5, help="Số epoch kiên nhẫn cho Early Stopping")
     args = ap.parse_args()
 
     mcfg, tcfg = ModelConfig(), TrainConfig()
-    if args.epochs: tcfg.epochs = args.epochs
-    if args.batch_size: tcfg.batch_size = args.batch_size
+    if args.epochs:
+        tcfg.epochs = args.epochs
+    if args.batch_size:
+        tcfg.batch_size = args.batch_size
 
     maybe_preprocess(args.data_dir)
     tokenizer = SimpleTokenizer.load(os.path.join(args.data_dir, "vocab.json"))
@@ -98,58 +95,64 @@ def main():
     mcfg.pad_idx = 0
     mcfg.use_paired_views = True
 
-    # Tự động load số lớp MLC từ mesh_labels.json (nếu có)
+    # Nạp số lượng nhãn MeSH từ file cấu hình
     mesh_labels_path = os.path.join(args.data_dir, "mesh_labels.json")
     if os.path.exists(mesh_labels_path):
         import json
-        with open(mesh_labels_path) as f:
+        with open(mesh_labels_path, "r", encoding="utf-8") as f:
             mesh_info = json.load(f)
         mcfg.num_mlc_labels = mesh_info["num_labels"]
-        print(f"MLC labels: {mcfg.num_mlc_labels} lớp (MeSH root tags)")
+        print(f"Nhãn bệnh lý MLC: {mcfg.num_mlc_labels} lớp (MeSH root tags)")
 
-    term_weight_table = torch.load(os.path.join(args.data_dir, "term_weights.pt"),
-                                   weights_only=True)
+    # Nạp bảng trọng số từ vựng TF-IDF
+    term_weight_table = torch.load(os.path.join(args.data_dir, "term_weights.pt"), weights_only=True)
+
+    # Chuẩn bị dữ liệu huấn luyện
     ds = IUXrayDataset(
         os.path.join(args.data_dir, "processed_train.json"),
         image_root=args.data_dir,
-        max_len=mcfg.max_seq_len, img_size=mcfg.img_size,
+        max_len=mcfg.max_seq_len,
+        img_size=mcfg.img_size,
     )
     train_loader = DataLoader(ds, batch_size=tcfg.batch_size, shuffle=True, num_workers=0)
-    print(f"Train: {len(ds)} mẫu, vocab={mcfg.vocab_size}")
+    print(f"Tập huấn luyện: {len(ds)} mẫu, kích thước từ điển = {mcfg.vocab_size}")
 
-    # Tạo val loader cho early stopping
+    # Chuẩn bị dữ liệu kiểm định
     val_loader = None
     val_json = os.path.join(args.data_dir, "processed_val.json")
     if os.path.exists(val_json):
-        val_ds = IUXrayDataset(val_json, image_root=args.data_dir,
-                               max_len=mcfg.max_seq_len, img_size=mcfg.img_size)
+        val_ds = IUXrayDataset(
+            val_json,
+            image_root=args.data_dir,
+            max_len=mcfg.max_seq_len,
+            img_size=mcfg.img_size,
+        )
         val_loader = DataLoader(val_ds, batch_size=tcfg.batch_size, shuffle=False, num_workers=0)
-        print(f"Val: {len(val_ds)} mẫu (dùng cho early stopping theo CIDEr)")
+        print(f"Tập kiểm định: {len(val_ds)} mẫu (dùng cho Early Stopping)")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = args.amp and torch.cuda.is_available()
-    print(f"Thiết bị: {device} | AMP: {use_amp} | effective batch = {tcfg.batch_size * args.accum_steps}")
+    print(f"Thiết bị hoạt động: {device} | AMP: {use_amp} | Effective batch = {tcfg.batch_size * args.accum_steps}")
 
+    # Khởi tạo mô hình và bộ tối ưu
     model = MulticriteriaTransformer(mcfg, tcfg).to(device)
     optimizer = build_optimizer(model, tcfg)
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     term_weight_table = term_weight_table.to(device)
 
-    # ---- Chuẩn bị log CSV ----
+    # Chuẩn bị thư mục và file ghi nhật ký huấn luyện
     os.makedirs("logs", exist_ok=True)
     os.makedirs("checkpoints", exist_ok=True)
     log_path = "logs/train_log.csv"
     log_file = open(log_path, "w", newline="", encoding="utf-8")
     log_writer = csv.writer(log_file)
-    log_writer.writerow(["epoch", "step", "rg", "mlc", "itm", "w_itm", "total",
-                         "val_cider", "time_sec"])
+    log_writer.writerow(["epoch", "step", "rg", "mlc", "itm", "w_itm", "total", "val_cider", "time_sec"])
     log_file.flush()
-    print(f"Log CSV: {os.path.abspath(log_path)}")
 
-    # ---- Early stopping state ----
     best_cider = -1.0
     patience_counter = 0
 
+    # Vòng lặp chính qua các Epoch
     for epoch in range(tcfg.epochs):
         model.train()
         optimizer.zero_grad()
@@ -168,6 +171,7 @@ def main():
 
             scaler.scale(loss).backward()
 
+            # Cập nhật trọng số theo chu kỳ tích lũy gradient
             if (step + 1) % args.accum_steps == 0:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -178,53 +182,42 @@ def main():
             epoch_loss_sum += loss_dict["total"]
             epoch_steps += 1
 
-            # In loss mỗi 10 step
             if step % 10 == 0:
-                print(f"[epoch {epoch:02d} step {step:04d}] " +
+                print(f"[Epoch {epoch:02d} Step {step:04d}] " +
                       "  ".join(f"{k}={v:.4f}" for k, v in loss_dict.items()))
 
         epoch_time = time.time() - epoch_start
         avg_loss = epoch_loss_sum / max(epoch_steps, 1)
 
-        # ---- Đánh giá CIDEr trên val ----
+        # Đánh giá điểm CIDEr sau mỗi epoch
         val_cider = 0.0
         if val_loader is not None and tokenizer is not None:
-            print(f"[epoch {epoch:02d}] Đang đánh giá CIDEr trên val...")
+            print(f"[Epoch {epoch:02d}] Đang đánh giá CIDEr trên tập val...")
             val_cider = evaluate_cider_on_val(model, val_loader, tokenizer, device)
-            print(f"[epoch {epoch:02d}] Val CIDEr = {val_cider:.4f} | "
-                  f"Avg loss = {avg_loss:.4f} | Time = {epoch_time:.1f}s")
+            print(f"[Epoch {epoch:02d}] Val CIDEr = {val_cider:.4f} | Avg loss = {avg_loss:.4f} | Thời gian = {epoch_time:.1f}s")
 
-            # Early stopping + lưu best checkpoint
+            # Lưu checkpoint tốt nhất và kiểm tra Early Stopping
             if val_cider > best_cider:
                 best_cider = val_cider
                 patience_counter = 0
                 torch.save(model.state_dict(), "checkpoints/best.pt")
-                print(f"  ↑ Best CIDEr cập nhật: {best_cider:.4f} → Đã lưu checkpoints/best.pt")
+                print(f"  ↑ Kỷ lục mới: CIDEr = {best_cider:.4f} -> Đã lưu checkpoints/best.pt")
             else:
                 patience_counter += 1
                 print(f"  CIDEr không cải thiện ({patience_counter}/{args.patience})")
                 if patience_counter >= args.patience:
-                    print(f"Early stopping tại epoch {epoch} (patience={args.patience}).")
-                    # Ghi log epoch cuối
-                    log_writer.writerow([epoch, "end", "", "", "", "", avg_loss,
-                                         val_cider, f"{epoch_time:.1f}"])
+                    print(f"Dừng sớm (Early Stopping) tại epoch {epoch} do không tăng sau {args.patience} epochs.")
+                    log_writer.writerow([epoch, "end", "", "", "", "", avg_loss, val_cider, f"{epoch_time:.1f}"])
                     log_file.flush()
                     break
-        else:
-            print(f"[epoch {epoch:02d}] Avg loss = {avg_loss:.4f} | Time = {epoch_time:.1f}s")
 
-        # Lưu checkpoint mỗi epoch
         torch.save(model.state_dict(), f"checkpoints/epoch{epoch:02d}.pt")
-
-        # Ghi log CSV
-        log_writer.writerow([epoch, "end", "", "", "", "", f"{avg_loss:.4f}",
-                             f"{val_cider:.4f}", f"{epoch_time:.1f}"])
+        log_writer.writerow([epoch, "end", "", "", "", "", f"{avg_loss:.4f}", f"{val_cider:.4f}", f"{epoch_time:.1f}"])
         log_file.flush()
 
     log_file.close()
-    print(f"\nXong. Best CIDEr = {best_cider:.4f}")
-    print(f"Best checkpoint: checkpoints/best.pt")
-    print(f"Log: {os.path.abspath(log_path)}")
+    print(f"\nHuấn luyện kết thúc. Điểm CIDEr cao nhất: {best_cider:.4f}")
+    print(f"Mô hình tối ưu lưu tại: checkpoints/best.pt")
 
 
 if __name__ == "__main__":
