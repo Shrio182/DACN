@@ -152,6 +152,23 @@ python train.py --data_dir ./data/iu_xray --epochs 30 --batch_size 16 --amp --pa
 
 ---
 
+## 📖 Trích dẫn Bài báo Gốc (Citation)
+
+```bibtex
+@article{wang2022automated,
+  title={Automated Radiographic Report Generation Purely on Transformer: A Multicriteria Supervised Approach},
+  author={Wang, Zhanyu and Liu, Lingqiao and Wang, Lei and Zhou, Luping},
+  journal={IEEE Transactions on Medical Imaging},
+  volume={41},
+  number={10},
+  pages={2803--2814},
+  year={2022},
+  publisher={IEEE}
+}
+```
+
+---
+
 ## ⚠️ Tuyên bố Miễn trừ Y tế (Medical Disclaimer)
 
 Dự án này được xây dựng phục vụ mục đích **nghiên cứu khoa học học thuật**. Các chẩn đoán và văn bản báo cáo tạo sinh từ mô hình trí tuệ nhân tạo **không thay thế** kết luận chuyên môn của bác sĩ chẩn đoán hình ảnh và chuyên gia y tế.
