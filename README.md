@@ -37,11 +37,15 @@ Dự án đã tích hợp sẵn **các trọng số mô hình đã huấn luyệ
 ### Các thành phần cốt lõi:
 1. **ViT Encoder**: Xử lý đồng thời cặp ảnh Frontal (chính diện) và Lateral (nghiêng) kích thước 448×448 với patch 32×32 (không dùng CNN pretrained). Trích xuất 392 token đặc trưng vùng và 1 token `[CLS]` toàn cục đại diện ngữ cảnh.
 2. **Memory-Augmented Decoder**: Gồm 3 tầng Decoder tích hợp **Memory-Driven LayerNorm (MLN)**, sử dụng một vector bộ nhớ học được để điều biến thích ứng tham số chuẩn hóa.
-3. **Giám sát Đa tiêu chí (Multi-Criteria Supervision)**:
-   $$\mathcal{L}_{total} = \lambda_{RG} \cdot \mathcal{L}_{RG}^{tw} + \lambda_{MLC} \cdot \mathcal{L}_{MLC} + \lambda_{ITM} \cdot \mathcal{L}_{ITM}$$
-   - **$\mathcal{L}_{RG}^{tw}$**: Hàm mất mát sinh từ vựng có đánh trọng số TF-IDF, phạt nặng khi sinh sai các thuật ngữ bệnh lý hiếm.
-   - **$\mathcal{L}_{MLC}$**: Phân loại đa nhãn 65 bệnh lý MeSH root tags từ vector `[CLS]`.
-   - **$\mathcal{L}_{ITM}$**: Khớp nối ảnh - văn bản với trọng số thời gian $\lambda_i = (N_r - i + 1)^{-\alpha}$ ($\alpha = 0.5$) và Triplet Loss margin $\varepsilon = 0.05$.
+3. **Giám sát Đa tiêu chí (Multi-Criteria Supervision)**: Tối ưu đồng thời 3 mục tiêu qua hàm mất mát tổng hợp:
+
+$$
+\mathcal{L}_{total} = \lambda_{RG} \cdot \mathcal{L}_{RG}^{tw} + \lambda_{MLC} \cdot \mathcal{L}_{MLC} + \lambda_{ITM} \cdot \mathcal{L}_{ITM}
+$$
+
+   - **Term-Weighted RG Loss** ($\mathcal{L}_{RG}^{tw}$): Hàm mất mát sinh từ vựng có đánh trọng số TF-IDF, phạt nặng khi sinh sai các thuật ngữ bệnh lý hiếm.
+   - **MLC Loss** ($\mathcal{L}_{MLC}$): Phân loại đa nhãn 65 bệnh lý MeSH root tags từ vector `[CLS]`.
+   - **Temporal-Weighted ITM Loss** ($\mathcal{L}_{ITM}$): Khớp nối ảnh - văn bản với trọng số thời gian $\lambda_i = (N_r - i + 1)^{-\alpha}$ ($\alpha = 0.5$) và Triplet Loss margin $\varepsilon = 0.05$.
 
 ---
 
