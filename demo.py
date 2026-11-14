@@ -203,6 +203,16 @@ def main():
             vocab_path = selected_info["vocab"]
 
         st.divider()
+        st.subheader("🎛️ Thuật toán Giải mã")
+        use_beam_search = st.toggle(
+            "Kích hoạt Beam Search (Khuyên dùng)",
+            value=True,
+            help="Tắt chế độ này sẽ dùng Greedy Search gốc (dễ bị lặp 1 câu do mất cân bằng dữ liệu y khoa). Bật chế độ này giúp mô hình phân biệt chi tiết từng ảnh X-quang.",
+        )
+        beam_size = 3 if use_beam_search else 1
+        repetition_penalty = 1.2 if use_beam_search else 1.0
+
+        st.divider()
         st.subheader("📋 Thông số Mô hình (IEEE TMI 2022)")
         st.markdown(
             "- **Đầu vào**: Cặp ảnh Frontal + Lateral\n"
@@ -297,12 +307,14 @@ def main():
         with st.spinner("Đang xử lý ảnh qua Vision Transformer Encoder và sinh báo cáo..."):
             t_start = time.time()
             with torch.no_grad():
-                # 1. Sinh báo cáo văn bản theo cơ chế chuẩn
+                # 1. Sinh báo cáo văn bản (hỗ trợ Beam Search chống lặp câu y khoa)
                 out_ids = model.generate(
                     batch_images,
                     bos_idx=bos_idx,
                     eos_idx=eos_idx,
                     max_len=mcfg.max_seq_len,
+                    beam_size=beam_size,
+                    repetition_penalty=repetition_penalty,
                 )
                 generated_text = tokenizer.decode(out_ids[0].tolist())
 
@@ -333,7 +345,8 @@ def main():
             st.code(generated_text, language=None)
 
             st.caption(
-                f"Độ dài báo cáo tạo sinh: {len(generated_text.split())} từ (Giới hạn: {mcfg.max_seq_len} từ)"
+                f"Thuật toán: {'Beam Search (k=3)' if beam_size > 1 else 'Greedy Search'} | "
+                f"Độ dài: {len(generated_text.split())} từ (Giới hạn: {mcfg.max_seq_len} từ)"
             )
 
         with res_col2:
