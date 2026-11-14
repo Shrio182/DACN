@@ -18,7 +18,7 @@ env/
 .venv/
 ENV/
 
-# Checkpoint weights (Lưu trên Drive / Colab, không push Git)
+# Checkpoint weights (Lưu trên Drive / Kaggle, không push Git)
 checkpoints/
 *.pt
 *.pth
@@ -37,17 +37,18 @@ chest xray data/
 *.rar
 *.7z
 *.png
-!outputs/charts/*.png
 *.jpg
 *.jpeg
 *.dcm
 
-# Logs & Diagnostics outputs
+# Outputs & Logs
+outputs/
 logs/
-outputs/diagnostics/*.csv
-outputs/diagnostics/*.json
 
 # OS & Jupyter
 .DS_Store
 Thumbs.db
 .ipynb_checkpoints/
+
+# Antigravity / AI prompts
+ANTIGRAVITY_PROMPT.md
