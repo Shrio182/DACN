@@ -210,43 +210,14 @@ def main():
             vocab_path = selected_info["vocab"]
 
         st.divider()
-        st.subheader("🎛️ Tham số Giải mã (Decoding)")
-
-        decoding_mode = st.radio(
-            "Chiến lược giải mã:",
-            ["Beam Search (Khuyên dùng)", "Greedy Search"],
-            index=0,
-            help="Beam Search giúp tránh hiện tượng lặp từ và chọn chuỗi từ có xác suất toàn cục cao nhất.",
-        )
-
-        if decoding_mode == "Beam Search (Khuyên dùng)":
-            beam_size = st.slider("Beam Size (k):", min_value=2, max_value=8, value=3, step=1)
-        else:
-            beam_size = 1
-
-        repetition_penalty = st.slider(
-            "Repetition Penalty (Phạt lặp từ):",
-            min_value=1.0,
-            max_value=2.0,
-            value=1.2,
-            step=0.05,
-            help="Tăng giá trị này (> 1.0) giúp loại bỏ triệt để hiện tượng Mode Collapse sinh lặp câu.",
-        )
-
-        max_seq_len = st.slider(
-            "Độ dài tối đa báo cáo:",
-            min_value=30,
-            max_value=100,
-            value=60,
-            step=5,
-        )
-
-        st.divider()
+        st.subheader("📋 Thông số Mô hình (IEEE TMI 2022)")
         st.markdown(
-            "**Thông số ViT Encoder:**\n"
-            "- Kích thước ảnh: `448 × 448`\n"
-            "- Patch size: `32 × 32`\n"
-            "- Kiến trúc: Frontal + Lateral Shared ViT"
+            "- **Đầu vào**: Cặp ảnh Frontal + Lateral\n"
+            "- **Kích thước ảnh**: `448 × 448` (Grayscale)\n"
+            "- **Patch size**: `32 × 32` (196 patches/view)\n"
+            "- **Vision Transformer**: 3 lớp, chia sẻ trọng số\n"
+            "- **Text Decoder**: 3 lớp + Memory-Driven LayerNorm\n"
+            "- **Độ dài báo cáo tối đa**: `60 từ`"
         )
 
     # ── KIỂM TRA FILE VÀ NẠP MODEL ─────────────────────────────────────────────
@@ -333,14 +304,12 @@ def main():
         with st.spinner("Đang xử lý ảnh qua Vision Transformer Encoder và sinh báo cáo..."):
             t_start = time.time()
             with torch.no_grad():
-                # 1. Sinh báo cáo văn bản
+                # 1. Sinh báo cáo văn bản theo cơ chế chuẩn
                 out_ids = model.generate(
                     batch_images,
                     bos_idx=bos_idx,
                     eos_idx=eos_idx,
-                    max_len=max_seq_len,
-                    beam_size=beam_size,
-                    repetition_penalty=repetition_penalty,
+                    max_len=mcfg.max_seq_len,
                 )
                 generated_text = tokenizer.decode(out_ids[0].tolist())
 
@@ -371,8 +340,7 @@ def main():
             st.code(generated_text, language=None)
 
             st.caption(
-                f"Cấu hình: Mode={decoding_mode} | k={beam_size} | "
-                f"Penalty={repetition_penalty} | Từ tạo sinh={len(generated_text.split())} từ"
+                f"Độ dài báo cáo tạo sinh: {len(generated_text.split())} từ (Giới hạn: {mcfg.max_seq_len} từ)"
             )
 
         with res_col2:
