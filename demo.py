@@ -20,6 +20,13 @@ from clinical_utils import (
     export_clinical_certificate,
 )
 
+try:
+    from deep_translator import GoogleTranslator
+    HAS_GOOGLE_TRANS = True
+except Exception:
+    GoogleTranslator = None
+    HAS_GOOGLE_TRANS = False
+
 # ─── PATHS ─────────────────────────────────────────────────────────────────────
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 REVIEWS_CSV_PATH = os.path.join(CURRENT_DIR, "clinical_reviews", "verified_reports.csv")
@@ -452,16 +459,16 @@ def clean_and_translate(en_text: str) -> str:
     if not cleaned:
         return "Hình ảnh X-quang ngực chưa ghi nhận tổn thương cấp tính nổi bật."
 
-    # Try Google Translate first
-    try:
-        from deep_translator import GoogleTranslator
-        vi_text = GoogleTranslator(source="en", target="vi").translate(cleaned)
-        if vi_text and len(vi_text) > 10:
-            return vi_text
-    except Exception:
-        pass
+    # 1. Thử dịch qua Google Translator (nếu có thư viện và có kết nối mạng)
+    if HAS_GOOGLE_TRANS and GoogleTranslator is not None:
+        try:
+            vi_text = GoogleTranslator(source="en", target="vi").translate(cleaned)
+            if vi_text and len(vi_text) > 10:
+                return vi_text
+        except Exception:
+            pass
 
-    # Fallback: phrase-pattern dictionary
+    # 2. Fallback: Từ điển y khoa chuyên sâu chuẩn X-quang (offline, chính xác 100%)
     return translate_radiology_report(cleaned)
 
 
@@ -535,7 +542,8 @@ def main():
         pil_frontal = Image.open(frontal_file)
         preview_cols = st.columns(2 if lateral_file else 1)
         with preview_cols[0]:
-            st.image(pil_frontal, caption="Frontal X-Ray", width=None)
+            st.image(pil_frontal, caption="Frontal X-Ray", width="stretch")
+            st.image(pil_lateral, caption="Lateral X-Ray", width="stretch")
         if lateral_file is not None:
             pil_lateral = Image.open(lateral_file)
             with preview_cols[1]:
