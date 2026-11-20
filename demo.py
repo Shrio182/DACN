@@ -1,28 +1,54 @@
 # demo.py
-# Ứng dụng giao diện web Streamlit phục vụ chẩn đoán hình ảnh và tự động sinh báo cáo X-quang y tế.
-# Tái hiện bài báo: "Automated Radiographic Report Generation Purely on Transformer:
-#                   A Multicriteria Supervised Approach" (IEEE TMI 2022).
+# Hệ thống Hỗ trợ Chẩn đoán Hình ảnh X-Quang Ngực Lâm Sàng
+# 3-Model Ensemble: Archive (IU-Xray) + TimPhoi + MIMIC-CXR → 14 CheXpert categories
+# Giao diện Bác sĩ Chẩn đoán Hình ảnh (không có sidebar)
 
-import os
-import sys
-import glob
-import time
-import json
+from datetime import datetime
+import os, re, json, csv, glob
+import numpy as np
 import torch
 import streamlit as st
 from PIL import Image
 from torchvision import transforms
 
-# Đảm bảo import được module dự án
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-if CURRENT_DIR not in sys.path:
-    sys.path.insert(0, CURRENT_DIR)
-
 from config import ModelConfig, TrainConfig
 from model.full_model import MulticriteriaTransformer
-from data.tokenizer import SimpleTokenizer, BOS, EOS, PAD
+from clinical_utils import (
+    translate_radiology_report,
+    save_doctor_review,
+    load_doctor_reviews,
+    export_clinical_certificate,
+)
 
-# ── Danh sách 65 MeSH Root Tags tiêu chuẩn của IU-Xray ─────────────────────────
+# ─── PATHS ─────────────────────────────────────────────────────────────────────
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+REVIEWS_CSV_PATH = os.path.join(CURRENT_DIR, "clinical_reviews", "verified_reports.csv")
+
+# ─── 14 CheXpert CLASSES ────────────────────────────────────────────────────────
+CHEXPERT_CLASSES = [
+    "Enlarged Cardiomediastinum", "Cardiomegaly", "Lung Opacity", "Lung Lesion",
+    "Edema", "Consolidation", "Pneumonia", "Atelectasis", "Pneumothorax",
+    "Effusion", "Pleural Thickening", "Fibrosis", "Fracture", "Support Devices",
+]
+
+VI_14_LABELS = [
+    "Trung thất giãn rộng (Enlarged Cardiomediastinum)",
+    "Bóng tim to (Cardiomegaly)",
+    "Mờ phế trường phổi (Lung Opacity)",
+    "Tổn thương dạng nốt/khối phổi (Lung Lesion)",
+    "Phù phổi cấp / Ứ huyết (Pulmonary Edema)",
+    "Đông đặc phế nang (Consolidation)",
+    "Viêm phổi (Pneumonia)",
+    "Xẹp phổi (Atelectasis)",
+    "Tràn khí màng phổi (Pneumothorax)",
+    "Tràn dịch màng phổi (Pleural Effusion)",
+    "Dày dính màng phổi (Pleural Thickening)",
+    "Xơ phổi / Xơ hóa mô kẽ (Fibrosis)",
+    "Gãy xương sườn / đòn (Fracture)",
+    "Thiết bị can thiệp y tế (Support Devices)",
+]
+
+# ─── DEFAULT MeSH LABELS (Archive model, 65 lớp) ────────────────────────────────
 DEFAULT_MESH_LABELS = [
     "airspace disease", "aorta", "aorta, thoracic", "aortic valve", "arteriosclerosis",
     "atelectasis", "atherosclerosis", "bone diseases, metabolic", "calcinosis", "cardiomegaly",
@@ -36,375 +62,696 @@ DEFAULT_MESH_LABELS = [
     "pulmonary atelectasis", "pulmonary congestion", "pulmonary disease, chronic obstructive",
     "pulmonary edema", "pulmonary emphysema", "pulmonary fibroses", "scoliosis", "spine",
     "spondylosis", "sternotomy", "surgical instruments", "thoracic vertebrae", "thoracotomy",
-    "trachea", "tuberculosis", "vascular calcification", "vertebrae", "wire", "bone", "ribs"
+    "trachea", "tuberculosis", "vascular calcification", "vertebrae", "wire", "bone", "ribs",
 ]
 
+# ─── MeSH → CheXpert 14-class MAPPING ───────────────────────────────────────────
+# Maps each of 14 CheXpert slot indices to a list of MeSH label strings from Archive
+MESH_TO_CHEXPERT_MAP = {
+    0: ["mediastinum", "aorta, thoracic", "aorta"],            # Enlarged Cardiomediastinum
+    1: ["cardiomegaly"],                                         # Cardiomegaly
+    2: ["opacity", "airspace disease", "infiltrate", "consolidation", "lung diseases"],  # Lung Opacity
+    3: ["nodule", "granuloma", "granulomatous disease"],         # Lung Lesion
+    4: ["edema", "pulmonary edema", "pulmonary congestion"],     # Edema
+    5: ["consolidation"],                                        # Consolidation
+    6: ["pneumonia"],                                            # Pneumonia
+    7: ["atelectasis", "pulmonary atelectasis", "hypoinflation"],# Atelectasis
+    8: ["pneumothorax"],                                         # Pneumothorax
+    9: ["pleural effusion", "pleura"],                           # Effusion
+    10: ["pleura"],                                              # Pleural Thickening
+    11: ["pulmonary fibroses", "cicatrix"],                      # Fibrosis
+    12: ["fractures, bone"],                                     # Fracture
+    13: ["catheters, indwelling", "surgical instruments", "sternotomy", "wire"],  # Support Devices
+}
+
+# Pre-build index lists at startup
+def _build_mesh_index_map():
+    idx_map = {}
+    for chex_idx, mesh_labels in MESH_TO_CHEXPERT_MAP.items():
+        indices = []
+        for ml in mesh_labels:
+            if ml in DEFAULT_MESH_LABELS:
+                indices.append(DEFAULT_MESH_LABELS.index(ml))
+        idx_map[chex_idx] = indices
+    return idx_map
+
+MESH_IDX_MAP = _build_mesh_index_map()
+
+# ─── PAGE CONFIG (must be first Streamlit call) ─────────────────────────────────
 st.set_page_config(
-    page_title="Radiology Report AI (IEEE TMI 2022)",
-    page_icon="🩻",
+    page_title="Hệ thống Chẩn đoán X-Quang Ngực AI",
+    page_icon="🫁",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
+# ─── CSS: White/Black Clinical UI, hide sidebar ─────────────────────────────────
+st.markdown("""
+<style>
+/* Hide sidebar and toggle button completely */
+section[data-testid="stSidebar"] { display: none !important; }
+button[data-testid="collapsedControl"] { display: none !important; }
 
-# ── Tự động quét và phát hiện TẤT CẢ các mô hình trong artifacts/ ──────────────
-def discover_all_models():
-    models = {}
-    artifacts_dir = os.path.join(CURRENT_DIR, "artifacts")
-    
-    if os.path.exists(artifacts_dir):
-        for item in sorted(os.listdir(artifacts_dir)):
-            sub_path = os.path.join(artifacts_dir, item)
-            if not os.path.isdir(sub_path):
-                continue
-            
-            # Tìm file trọng số .pt hoặc .pth
-            pt_files = glob.glob(os.path.join(sub_path, "*.pt")) + glob.glob(os.path.join(sub_path, "*.pth"))
-            # Tìm file từ điển vocab*.json
-            vocab_files = glob.glob(os.path.join(sub_path, "vocab*.json"))
-            if not vocab_files:
-                all_jsons = glob.glob(os.path.join(sub_path, "*.json"))
-                vocab_files = [j for j in all_jsons if not os.path.basename(j).startswith("mesh_")]
+/* White clinical background */
+.stApp { background: #FFFFFF !important; color: #0F172A !important; font-family: 'Segoe UI', Arial, sans-serif; }
+.main .block-container { padding: 1.5rem 2rem !important; max-width: 1200px; margin: auto; }
 
-            if pt_files and vocab_files:
-                ckpt_file = pt_files[0]
-                vocab_file = vocab_files[0]
-                
-                # Đọc kết quả test nếu có
-                metrics_summary = ""
-                test_txts = glob.glob(os.path.join(sub_path, "test_results*.txt"))
-                if test_txts:
-                    try:
-                        with open(test_txts[0], "r", encoding="utf-8", errors="ignore") as f:
-                            lines = f.readlines()
-                            cider_val = ""
-                            b4_val = ""
-                            for line in lines:
-                                if "CIDEr" in line:
-                                    cider_val = line.split()[-1]
-                                elif "BLEU-4" in line:
-                                    b4_val = line.split()[-1]
-                            if cider_val:
-                                metrics_summary = f"CIDEr: {cider_val}" + (f" | BLEU-4: {b4_val}" if b4_val else "")
-                    except Exception:
-                        pass
+/* Header */
+.clinical-header {
+    background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%);
+    color: white !important;
+    padding: 1.5rem 2rem;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+}
+.clinical-header h1 { color: white !important; margin: 0; font-size: 1.6rem; }
+.clinical-header p { color: #94A3B8 !important; margin: 0.3rem 0 0 0; font-size: 0.9rem; }
 
-                display_name = item.upper() if item in ["mimic", "archive"] else item.capitalize()
-                if item.lower() == "timphoi":
-                    display_name = "IU-Xray TimPhoi (Khuyên dùng)"
-                elif item.lower() == "archive":
-                    display_name = "IU-Xray Archive (Tập đầy đủ)"
-                elif item.lower() == "mimic":
-                    display_name = "MIMIC-CXR"
+/* Section cards */
+.section-card {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1.2rem;
+}
+.section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0F172A;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid #0F172A;
+    padding-bottom: 0.4rem;
+    margin-bottom: 1rem;
+}
 
-                models[display_name] = {
-                    "checkpoint": ckpt_file,
-                    "vocab": vocab_file,
-                    "folder": item,
-                    "summary": metrics_summary or "Mô hình đã huấn luyện hoàn thiện",
-                }
+/* Vietnamese report */
+.vi-report {
+    background: #FFFFFF;
+    border-left: 4px solid #1E3A5F;
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    font-size: 1.05rem;
+    line-height: 1.8;
+    color: #0F172A;
+    margin-bottom: 0.5rem;
+}
 
-    # Thêm tùy chọn nhập đường dẫn tùy chỉnh
-    models["Tùy chỉnh (Đường dẫn thủ công)..."] = {
-        "checkpoint": "",
-        "vocab": "",
-        "folder": "custom",
-        "summary": "Tự nhập đường dẫn file .pt và vocab.json",
-    }
+/* Progress bar container */
+.prob-bar-wrap { margin-bottom: 0.5rem; }
+.prob-label { font-size: 0.82rem; color: #334155; font-weight: 600; margin-bottom: 2px; }
+.prob-bar-bg { background: #E2E8F0; border-radius: 6px; height: 14px; width: 100%; }
+.prob-bar-fg { height: 14px; border-radius: 6px; transition: width 0.4s ease; }
+.prob-pct { font-size: 0.75rem; color: #64748B; margin-left: 4px; }
 
-    return models
+/* Upload area */
+.upload-hint { color: #64748B; font-size: 0.82rem; margin-top: 0.3rem; }
+
+/* Doctor form */
+.form-label { font-weight: 600; color: #0F172A; font-size: 0.9rem; }
+
+/* Buttons */
+div[data-testid="stButton"] > button {
+    background: #0F172A !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 0.5rem 1.2rem !important;
+    font-weight: 600 !important;
+}
+div[data-testid="stButton"] > button:hover {
+    background: #1E3A5F !important;
+}
+
+/* Success/warning badges */
+.badge-green { background: #DCFCE7; color: #166534; border-radius: 4px; padding: 2px 8px; font-size: 0.78rem; font-weight: 600; }
+.badge-red { background: #FEE2E2; color: #991B1B; border-radius: 4px; padding: 2px 8px; font-size: 0.78rem; font-weight: 600; }
+
+/* Ensemble chip */
+.model-chip {
+    display: inline-block;
+    background: #EFF6FF;
+    color: #1D4ED8;
+    border: 1px solid #BFDBFE;
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin: 2px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
-# ── Hàm nạp mô hình dùng cache tài nguyên Streamlit ────────────────────────────
-@st.cache_resource(show_spinner="Đang nạp trọng số mô hình và từ điển vào bộ nhớ...")
-def load_trained_model(checkpoint_path: str, vocab_path: str):
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Không tìm thấy file checkpoint: {checkpoint_path}")
-    if not os.path.exists(vocab_path):
-        raise FileNotFoundError(f"Không tìm thấy file từ vựng: {vocab_path}")
+# ─── IMAGE PREPROCESSING ────────────────────────────────────────────────────────
+_IMG_TRANSFORM = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((448, 448)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5], std=[0.5]),
+])
 
-    tokenizer = SimpleTokenizer.load(vocab_path)
-    mcfg = ModelConfig()
-    tcfg = TrainConfig()
+def preprocess_image(pil_img: Image.Image) -> torch.Tensor:
+    """Convert PIL image → normalized tensor (1, 1, 448, 448)."""
+    if pil_img.mode != "RGB":
+        pil_img = pil_img.convert("RGB")
+    return _IMG_TRANSFORM(pil_img).unsqueeze(0)  # (1, 1, 448, 448)
 
-    mcfg.vocab_size = len(tokenizer)
-    mcfg.pad_idx = tokenizer.vocab.get(PAD, tokenizer.vocab.get("<pad>", 0))
-    mcfg.use_paired_views = True
-    mcfg.img_size = 448
-    mcfg.patch_size = 32
 
-    # Nạp state_dict an toàn, hỗ trợ bóc tách wrapper
-    raw_ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    if isinstance(raw_ckpt, dict):
-        if "model_state_dict" in raw_ckpt:
-            state_dict = raw_ckpt["model_state_dict"]
-        elif "state_dict" in raw_ckpt:
-            state_dict = raw_ckpt["state_dict"]
-        else:
-            state_dict = raw_ckpt
-    else:
-        state_dict = raw_ckpt
+# ─── LOAD ALL MODELS (cached across reruns) ─────────────────────────────────────
+MODEL_REGISTRY = {
+    "timphoi": {
+        "label": "IU-Xray TimPhoi (3 Losses)",
+        "pt":    os.path.join(CURRENT_DIR, "artifacts", "timphoi", "best_timphoi.pt"),
+        "vocab": os.path.join(CURRENT_DIR, "artifacts", "timphoi", "vocab_timphoi.json"),
+        "num_classes": 14,
+        "weight": 0.35,
+    },
+    "archive": {
+        "label": "IU-Xray Archive",
+        "pt":    os.path.join(CURRENT_DIR, "artifacts", "archive", "best_archive.pt"),
+        "vocab": os.path.join(CURRENT_DIR, "artifacts", "archive", "vocab_archive.json"),
+        "num_classes": 65,
+        "weight": 0.40,
+    },
+    "mimic": {
+        "label": "MIMIC-CXR (3 Losses)",
+        "pt":    os.path.join(CURRENT_DIR, "artifacts", "mimic", "best_mimic.pt"),
+        "vocab": os.path.join(CURRENT_DIR, "artifacts", "mimic", "vocab_mimic.json"),
+        "num_classes": 14,
+        "weight": 0.25,
+    },
+}
 
-    clean_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-    # Cập nhật số nhãn bệnh lý MLC từ trọng số checkpoint
-    if "mlc_head.proj.weight" in clean_state_dict:
-        mcfg.num_mlc_labels = clean_state_dict["mlc_head.proj.weight"].shape[0]
-
-    model = MulticriteriaTransformer(mcfg, tcfg)
-    model.load_state_dict(clean_state_dict, strict=False)
-    model.eval()
-
+@st.cache_resource(show_spinner=False)
+def load_all_models():
+    """
+    Load tất cả 3 mô hình PyTorch. Trả về dict:
+      key → {"model": nn.Module, "tok": {word: id}, "bos": int, "eos": int, "pad": int,
+              "id2word": {id: word}, "device": device, "num_classes": int, "label": str}
+    Nếu checkpoint bị thiếu → trả về None cho key đó.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+    loaded = {}
 
-    # Nạp danh sách nhãn MeSH
-    labels = DEFAULT_MESH_LABELS
-    possible_mesh_paths = [
-        os.path.join(os.path.dirname(vocab_path), "mesh_labels.json"),
-        os.path.join(CURRENT_DIR, "data", "mesh_labels.json"),
+    for key, cfg in MODEL_REGISTRY.items():
+        pt_path = cfg["pt"]
+        vocab_path = cfg["vocab"]
+
+        if not os.path.exists(pt_path) or not os.path.exists(vocab_path):
+            loaded[key] = None
+            continue
+
+        try:
+            # Load vocab
+            with open(vocab_path, "r", encoding="utf-8") as f:
+                tok = json.load(f)
+            id2word = {v: k for k, v in tok.items()}
+            vocab_size = len(tok)
+            pad_idx = tok.get("<pad>", 0)
+            bos_idx = tok.get("<bos>", 1)
+            eos_idx = tok.get("<eos>", 2)
+
+            # Determine num_classes from checkpoint if possible
+            ckpt = torch.load(pt_path, map_location="cpu", weights_only=False)
+            state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
+
+            # Auto-detect num_classes from MLC head
+            mlc_key = None
+            for k in state.keys():
+                if "mlc_head" in k and "weight" in k and "fc" in k:
+                    mlc_key = k
+                    break
+            if mlc_key and state[mlc_key].shape[0] in (14, 65):
+                num_classes = state[mlc_key].shape[0]
+            else:
+                num_classes = cfg["num_classes"]
+
+            # Build model config
+            mcfg = ModelConfig()
+            mcfg.vocab_size = vocab_size
+            mcfg.pad_idx = pad_idx
+            mcfg.num_mlc_labels = num_classes
+            tcfg = TrainConfig()
+
+            model = MulticriteriaTransformer(mcfg, tcfg)
+            missing, unexpected = model.load_state_dict(state, strict=False)
+            model.eval()
+            model.to(device)
+
+            loaded[key] = {
+                "model": model,
+                "tok": tok,
+                "id2word": id2word,
+                "bos": bos_idx,
+                "eos": eos_idx,
+                "pad": pad_idx,
+                "device": device,
+                "num_classes": num_classes,
+                "label": cfg["label"],
+                "weight": cfg["weight"],
+                "missing_keys": len(missing),
+                "unexpected_keys": len(unexpected),
+            }
+        except Exception as ex:
+            loaded[key] = {"error": str(ex), "label": cfg["label"]}
+
+    return loaded
+
+
+# ─── INFERENCE HELPERS ──────────────────────────────────────────────────────────
+def run_model_inference(entry: dict, frontal_tensor: torch.Tensor, lateral_tensor: torch.Tensor | None):
+    """
+    Run generate() and predict_mlc() on one model entry.
+    Returns (report_en: str, probs: np.ndarray of shape (num_classes,))
+    """
+    model = entry["model"]
+    device = entry["device"]
+    bos = entry["bos"]
+    eos = entry["eos"]
+    id2word = entry["id2word"]
+    pad = entry["pad"]
+
+    # Stack views: (1, num_views, 1, 448, 448)
+    frontal = frontal_tensor.to(device)                   # (1, 1, 448, 448)
+    if lateral_tensor is not None:
+        lateral = lateral_tensor.to(device)               # (1, 1, 448, 448)
+        images = torch.stack([frontal.squeeze(0), lateral.squeeze(0)], dim=0).unsqueeze(0)  # (1, 2, 1, 448, 448)
+    else:
+        images = frontal.unsqueeze(1)                     # (1, 1, 1, 448, 448) — single view
+
+    with torch.no_grad():
+        # Generate report
+        out_ids = model.generate(
+            images,
+            bos_idx=bos,
+            eos_idx=eos,
+            max_len=60,
+            beam_size=3,
+            repetition_penalty=1.20,
+            visual_guidance=0.8,
+        )
+        # Decode tokens
+        ids = out_ids[0].tolist()
+        words = []
+        for idx in ids:
+            if idx in (bos, eos, pad):
+                if idx == eos:
+                    break
+                continue
+            word = id2word.get(idx, "")
+            if word and word not in ("<bos>", "<eos>", "<pad>", "<unk>"):
+                words.append(word)
+        report_en = " ".join(words).strip()
+
+        # MLC probabilities
+        probs = model.predict_mlc(images)  # (1, num_classes)
+        probs_np = probs[0].cpu().numpy()
+
+    return report_en, probs_np
+
+
+def map_archive_to_14(probs_65: np.ndarray) -> np.ndarray:
+    """Map Archive's 65-dim MeSH output to 14-dim CheXpert space."""
+    out = np.zeros(14, dtype=np.float32)
+    for chex_idx, mesh_indices in MESH_IDX_MAP.items():
+        if mesh_indices:
+            out[chex_idx] = float(np.max(probs_65[mesh_indices]))
+    return out
+
+
+def compute_ensemble(results: dict, all_entries: dict) -> np.ndarray:
+    """
+    Weighted ensemble of available models → 14-dim CheXpert probability vector.
+    results: {key: (report_en, probs_np)}  only for successfully inferred models.
+    """
+    total_weight = 0.0
+    weighted_sum = np.zeros(14, dtype=np.float32)
+
+    for key, (report_en, probs_np) in results.items():
+        w = all_entries[key]["weight"]
+        num_cls = all_entries[key]["num_classes"]
+
+        if num_cls == 65:
+            probs14 = map_archive_to_14(probs_np)
+        else:
+            probs14 = probs_np[:14].astype(np.float32)
+
+        weighted_sum += w * probs14
+        total_weight += w
+
+    if total_weight > 0:
+        weighted_sum /= total_weight
+    return weighted_sum
+
+
+def select_best_report(reports: dict) -> str:
+    """Pick the longest, non-trivial English report from available models."""
+    candidates = []
+    for key, (report_en, _) in reports.items():
+        if report_en and len(report_en.strip()) > 10:
+            candidates.append((len(report_en), report_en))
+    if not candidates:
+        return ""
+    candidates.sort(reverse=True)
+    return candidates[0][1]
+
+
+# ─── TEXT CLEANING & TRANSLATION ────────────────────────────────────────────────
+def _strip_comparison_sentences(text: str) -> str:
+    """Remove comparison-with-prior sentences from radiology text."""
+    patterns = [
+        r"[^.]*\bin comparison with[^.]*\.?",
+        r"[^.]*\bcompared (to|with) (prior|previous)[^.]*\.?",
+        r"[^.]*\bno significant change (from|since)[^.]*\.?",
+        r"[^.]*\bstable since[^.]*\.?",
     ]
-    for pmp in possible_mesh_paths:
-        if os.path.exists(pmp):
-            try:
-                with open(pmp, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    labels = data.get("mesh_classes", labels)
-                break
-            except Exception:
-                pass
-
-    return model, tokenizer, device, mcfg, labels
+    for p in patterns:
+        text = re.sub(p, " ", text, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", text).strip()
 
 
-def preprocess_xray_image(img: Image.Image, img_size: int = 448) -> torch.Tensor:
-    # Chuẩn hóa ảnh X-quang đúng chuẩn huấn luyện: Grayscale 1 kênh, resize 448x448, mean=[0.5], std=[0.5]
-    tfm = transforms.Compose([
-        transforms.Grayscale(num_output_channels=1),
-        transforms.Resize((img_size, img_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5], std=[0.5]),
-    ])
-    return tfm(img)
+def clean_and_translate(en_text: str) -> str:
+    """Clean EN radiology text, translate to VI with Google fallback to phrase dictionary."""
+    if not en_text:
+        return ""
 
+    # Strip report header labels
+    cleaned = re.sub(r"\b(findings|impression)\s*:\s*", "", en_text, flags=re.IGNORECASE)
+    # Remove anonymization placeholders
+    cleaned = re.sub(r"\b(XXXX|xxxx|___+)\b", "", cleaned)
+    # Remove special tokens
+    for tok in ("<bos>", "<eos>", "<pad>", "<unk>"):
+        cleaned = cleaned.replace(tok, "")
+    # Remove comparison-with-prior sentences
+    cleaned = _strip_comparison_sentences(cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
 
-# ── GIAO DIỆN CHÍNH ───────────────────────────────────────────────────────────
-def main():
-    st.markdown(
-        """
-        <div style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-                    padding: 22px 28px; border-radius: 10px; margin-bottom: 22px; color: white;">
-            <h1 style="color: white; margin: 0; font-size: 2.1rem;">🩻 Radiology Report Generation AI</h1>
-            <p style="margin: 8px 0 0 0; opacity: 0.92; font-size: 1.02rem;">
-                Hệ thống tự động sinh báo cáo X-quang & dự đoán bệnh lý dựa trên kiến trúc thuần Transformer (IEEE TMI 2022)
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    if not cleaned:
+        return "Hình ảnh X-quang ngực chưa ghi nhận tổn thương cấp tính nổi bật."
 
-    available_models = discover_all_models()
-
-    # ── VỊ TRÍ ĐẦU TIÊN THANH BÊN (SIDEBAR): CHỌN MÔ HÌNH ──────────────────────
-    with st.sidebar:
-        st.header("🎯 Lựa chọn Mô hình")
-
-        model_choice = st.selectbox(
-            "Chọn mô hình chẩn đoán:",
-            list(available_models.keys()),
-            index=0,
-            help="Danh sách quét tự động tất cả các mô hình đã huấn luyện trong thư mục artifacts/.",
-        )
-
-        selected_info = available_models[model_choice]
-        st.info(f"📊 **Hiệu năng:** {selected_info['summary']}")
-
-        if model_choice.startswith("Tùy chỉnh"):
-            checkpoint_path = st.text_input("Đường dẫn Checkpoint (.pt):", value="")
-            vocab_path = st.text_input("Đường dẫn Vocab (.json):", value="")
-        else:
-            checkpoint_path = selected_info["checkpoint"]
-            vocab_path = selected_info["vocab"]
-
-        st.divider()
-        st.subheader("🎛️ Tinh chỉnh Giải mã (Visual Guidance)")
-
-        visual_guidance = st.slider(
-            "Độ nhạy thị giác (Visual Guidance):",
-            min_value=0.0,
-            max_value=1.5,
-            value=0.8,
-            step=0.1,
-            help="Cơ chế Contrastive Guidance: Giá trị > 0 giúp triệt tiêu mẫu câu bình thường mặc định và buộc mô hình tập trung vào đặc trưng dị thường trên ảnh.",
-        )
-
-        use_beam = st.toggle("Kích hoạt Beam Search", value=True)
-        beam_size = st.slider("Beam Size (k):", min_value=2, max_value=5, value=3, step=1) if use_beam else 1
-        repetition_penalty = st.slider("Phạt lặp từ (Repetition Penalty):", min_value=1.0, max_value=1.6, value=1.25, step=0.05)
-
-        st.divider()
-        st.subheader("📋 Cấu hình Kỹ thuật (IEEE TMI 2022)")
-        st.markdown(
-            "- **Đầu vào**: Cặp ảnh Frontal + Lateral\n"
-            "- **Độ phân giải**: `448 × 448` (Grayscale 1 kênh)\n"
-            "- **Patch Size**: `32 × 32` (196 vùng/view)\n"
-            "- **Vision Transformer**: 3 lớp, trọng số chia sẻ\n"
-            "- **Decoder**: 3 lớp + Memory-Driven LayerNorm"
-        )
-
-    # ── KIỂM TRA FILE VÀ NẠP MODEL ─────────────────────────────────────────────
-    if not checkpoint_path or not vocab_path or not os.path.exists(checkpoint_path) or not os.path.exists(vocab_path):
-        st.warning(
-            f"⚠️ Chưa tìm thấy file checkpoint hoặc vocab tương ứng.\n\n"
-            f"- **Checkpoint**: `{checkpoint_path}`\n"
-            "- **Vocab**: `{vocab_path}`\n\n"
-            "Hãy đảm bảo các file đã có trong thư mục `artifacts/`."
-        )
-        return
-
+    # Try Google Translate first
     try:
-        model, tokenizer, device, mcfg, mesh_labels = load_trained_model(checkpoint_path, vocab_path)
-    except Exception as e:
-        st.error(f"❌ Lỗi khi khởi tạo mô hình: {e}")
-        return
+        from deep_translator import GoogleTranslator
+        vi_text = GoogleTranslator(source="en", target="vi").translate(cleaned)
+        if vi_text and len(vi_text) > 10:
+            return vi_text
+    except Exception:
+        pass
 
-    # Thông tin model trạng thái hiện tại
-    dev_color = "#28a745" if device.type == "cuda" else "#007bff"
-    st.markdown(
-        f"""
-        <div style="background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; padding:10px 16px; margin-bottom:18px; font-size:0.92rem;">
-            <b>Mô hình hoạt động:</b> <code>{model_choice}</code> &nbsp;|&nbsp;
-            <b>Thiết bị tính toán:</b> <span style="background:{dev_color}; color:white; padding:2px 8px; border-radius:4px; font-weight:bold;">{str(device).upper()}</span> &nbsp;|&nbsp;
-            <b>Từ điển từ vựng:</b> <code>{len(tokenizer):,} từ</code> &nbsp;|&nbsp;
-            <b>Nhãn bệnh lý (MeSH):</b> <code>{mcfg.num_mlc_labels} nhãn</code>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    # Fallback: phrase-pattern dictionary
+    return translate_radiology_report(cleaned)
+
+
+# ─── PROGRESS BAR HTML ──────────────────────────────────────────────────────────
+def _bar_color(prob: float) -> str:
+    if prob < 0.25:
+        return "#16A34A"   # green
+    elif prob < 0.50:
+        return "#EAB308"   # yellow
+    elif prob < 0.75:
+        return "#F97316"   # orange
+    else:
+        return "#DC2626"   # red
+
+
+def render_disease_bars(ensemble_probs: np.ndarray) -> None:
+    """Render all 14 disease probability bars using 4-color system."""
+    cols = st.columns(2)
+    for i, (en_name, vi_name) in enumerate(zip(CHEXPERT_CLASSES, VI_14_LABELS)):
+        prob = float(ensemble_probs[i])
+        pct = prob * 100
+        color = _bar_color(prob)
+        col = cols[i % 2]
+        with col:
+            bar_html = f"""
+<div class="prob-bar-wrap">
+  <div class="prob-label">{vi_name}</div>
+  <div style="display:flex; align-items:center; gap:6px;">
+    <div class="prob-bar-bg" style="flex:1;">
+      <div class="prob-bar-fg" style="width:{min(pct,100):.1f}%; background:{color};"></div>
+    </div>
+    <span class="prob-pct" style="min-width:38px; text-align:right;">{pct:.1f}%</span>
+  </div>
+</div>"""
+            st.markdown(bar_html, unsafe_allow_html=True)
+
+
+# ─── MAIN APP ───────────────────────────────────────────────────────────────────
+def main():
+    # ── Header ──────────────────────────────────────────────────────────────────
+    st.markdown("""
+<div class="clinical-header">
+  <h1>🫁 Hệ thống AI Hỗ trợ Chẩn đoán X-Quang Ngực</h1>
+  <p>3-Model Ensemble · Multicriteria Transformer (IEEE TMI 2022) · ViT 448×448 · Memory-Augmented Decoder</p>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Upload Section ───────────────────────────────────────────────────────────
+    st.markdown('<div class="section-card"><div class="section-title">📂 Tải lên ảnh X-Quang</div>', unsafe_allow_html=True)
+    col_f, col_l = st.columns(2)
+    with col_f:
+        frontal_file = st.file_uploader(
+            "**Ảnh FRONTAL** *(bắt buộc)*",
+            type=["png", "jpg", "jpeg", "bmp", "tiff"],
+            key="frontal_upload",
+            help="Ảnh chụp X-quang tư thế thẳng (PA hoặc AP)",
+        )
+        st.markdown('<p class="upload-hint">Yêu cầu: PNG/JPG, tư thế thẳng (PA/AP)</p>', unsafe_allow_html=True)
+    with col_l:
+        lateral_file = st.file_uploader(
+            "**Ảnh LATERAL** *(tùy chọn)*",
+            type=["png", "jpg", "jpeg", "bmp", "tiff"],
+            key="lateral_upload",
+            help="Ảnh chụp X-quang tư thế nghiêng (tăng độ chính xác Ensemble)",
+        )
+        st.markdown('<p class="upload-hint">Khuyến nghị: Cung cấp cả 2 góc để tăng độ chính xác</p>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Preview uploaded images
+    if frontal_file is not None:
+        pil_frontal = Image.open(frontal_file)
+        preview_cols = st.columns(2 if lateral_file else 1)
+        with preview_cols[0]:
+            st.image(pil_frontal, caption="Frontal X-Ray", width=None)
+        if lateral_file is not None:
+            pil_lateral = Image.open(lateral_file)
+            with preview_cols[1]:
+                st.image(pil_lateral, caption="Lateral X-Ray", width=None)
+        else:
+            pil_lateral = None
+    else:
+        pil_frontal = None
+        pil_lateral = None
+
+    # ── Run Analysis Button ──────────────────────────────────────────────────────
+    analyze_clicked = st.button(
+        "🔬 Phân tích & Sinh Báo cáo X-Quang",
+        disabled=(frontal_file is None),
+        key="run_analysis",
     )
 
-    # ── KHU VỰC TẢI LÊN ẢNH ─────────────────────────────────────────────────────
-    st.subheader("1. Tải lên cặp ảnh X-quang lồng ngực (Frontal + Lateral)")
-    col_up1, col_up2 = st.columns(2)
+    if analyze_clicked and pil_frontal is not None:
+        with st.spinner("⏳ Đang nạp 3 mô hình và thực hiện phân tích ensemble..."):
+            all_entries = load_all_models()
 
-    with col_up1:
-        front_file = st.file_uploader(
-            "📷 Ảnh Frontal (Chính diện PA / AP) — Bắt buộc",
-            type=["png", "jpg", "jpeg", "dcm"],
-            key="file_front",
-            help="Ảnh chụp X-quang hướng trước-sau (PA/AP).",
-        )
+            # Preprocess images
+            frontal_tensor = preprocess_image(pil_frontal)
+            lateral_tensor = preprocess_image(pil_lateral) if pil_lateral else None
 
-    with col_up2:
-        lat_file = st.file_uploader(
-            "📷 Ảnh Lateral (Nghiêng) — Tùy chọn",
-            type=["png", "jpg", "jpeg", "dcm"],
-            key="file_lat",
-            help="Nếu không có ảnh nghiêng, hệ thống sẽ tự động dùng ảnh chính diện làm góc nhìn bổ trợ.",
-        )
+            # Run inference on each available model
+            results = {}
+            model_status = {}
+            for key, entry in all_entries.items():
+                if entry is None:
+                    model_status[key] = "missing"
+                    continue
+                if "error" in entry:
+                    model_status[key] = f"error: {entry['error'][:60]}"
+                    continue
+                try:
+                    report_en, probs_np = run_model_inference(entry, frontal_tensor, lateral_tensor)
+                    results[key] = (report_en, probs_np)
+                    model_status[key] = "ok"
+                except Exception as ex:
+                    model_status[key] = f"error: {str(ex)[:60]}"
 
-    if not front_file:
-        st.info("👆 Vui lòng tải lên ảnh X-quang chính diện (Frontal) để tiến hành chẩn đoán.")
+            if not results:
+                st.error("❌ Không có mô hình nào khả dụng. Kiểm tra thư mục `artifacts/`.")
+                return
+
+            # Compute ensemble
+            ensemble_probs = compute_ensemble(results, all_entries)
+            best_en_report = select_best_report(results)
+            vi_report = clean_and_translate(best_en_report)
+
+            # Determine which model(s) contributed
+            contributing = [all_entries[k]["label"] for k in results]
+
+            # Determine default selected diseases (prob >= 0.35)
+            default_diseases = [
+                VI_14_LABELS[i]
+                for i in range(14)
+                if float(ensemble_probs[i]) >= 0.35
+            ]
+
+            # Save to session state
+            st.session_state["diagnosis"] = {
+                "vi_report": vi_report,
+                "en_report": best_en_report,
+                "ensemble_probs": ensemble_probs,
+                "contributing": contributing,
+                "model_status": model_status,
+                "default_diseases": default_diseases,
+                "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
+            }
+            st.rerun()
+
+    # ── Display Diagnosis Results ────────────────────────────────────────────────
+    if "diagnosis" not in st.session_state:
         return
 
-    img_front = Image.open(front_file).convert("RGB")
-    img_lat = Image.open(lat_file).convert("RGB") if lat_file else None
+    dx = st.session_state["diagnosis"]
 
-    prev_c1, prev_c2 = st.columns(2)
-    with prev_c1:
-        st.image(img_front, caption="Góc chụp Frontal (Input)", use_container_width=True)
-    with prev_c2:
-        if img_lat:
-            st.image(img_lat, caption="Góc chụp Lateral (Input)", use_container_width=True)
-        else:
-            st.image(img_front, caption="Góc chụp Lateral (Tự động nhân bản Frontal)", use_container_width=True)
+    # ── Section 1: Vietnamese Report ─────────────────────────────────────────────
+    st.markdown('<div class="section-card"><div class="section-title">📋 Nhận định Lâm sàng từ AI (Tiếng Việt)</div>', unsafe_allow_html=True)
 
-    st.write("")
-    btn_predict = st.button("🚀 Thực hiện Chẩn đoán & Sinh Báo Cáo Y Khoa", type="primary", use_container_width=True)
+    # Model chips
+    chip_html = " ".join(f'<span class="model-chip">{m}</span>' for m in dx["contributing"])
+    st.markdown(f'<p style="margin-bottom:0.6rem;">Ensemble từ: {chip_html}</p>', unsafe_allow_html=True)
 
-    if btn_predict:
-        # Chuẩn hóa tensor ảnh đầu vào (1, 2, 1, 448, 448)
-        t_front = preprocess_xray_image(img_front, mcfg.img_size)
-        t_lat = preprocess_xray_image(img_lat if img_lat else img_front, mcfg.img_size)
-        batch_images = torch.stack([t_front, t_lat], dim=0).unsqueeze(0).to(device)
+    # Vietnamese report
+    st.markdown(f'<div class="vi-report">{dx["vi_report"]}</div>', unsafe_allow_html=True)
 
-        bos_idx = tokenizer.vocab.get(BOS, tokenizer.vocab.get("<bos>", 1))
-        eos_idx = tokenizer.vocab.get(EOS, tokenizer.vocab.get("<eos>", 2))
-
-        with st.spinner("Đang trích xuất đặc trưng qua Vision Transformer và giải mã báo cáo..."):
-            t_start = time.time()
-            with torch.no_grad():
-                # 1. Sinh báo cáo tự hồi quy có định hướng thị giác
-                out_ids = model.generate(
-                    batch_images,
-                    bos_idx=bos_idx,
-                    eos_idx=eos_idx,
-                    max_len=mcfg.max_seq_len,
-                    beam_size=beam_size,
-                    repetition_penalty=repetition_penalty,
-                    visual_guidance=visual_guidance,
-                )
-                generated_text = tokenizer.decode(out_ids[0].tolist())
-
-                # 2. Dự đoán xác suất nhãn bệnh lý từ CLS token
-                mlc_probs = model.predict_mlc(batch_images)[0].cpu().numpy()
-
-            elapsed = time.time() - t_start
-
-        st.success(f"✅ Hoàn tất xử lý trong {elapsed:.2f} giây trên thiết bị {str(device).upper()}")
-
-        # ── KẾT QUẢ SINH BÁO CÁO VÀ PHÂN LOẠI BỆNH LÝ ─────────────────────────
-        res_col1, res_col2 = st.columns([1.15, 0.85])
-
-        with res_col1:
-            st.subheader("📋 Báo cáo Y khoa Tự động (Generated Report)")
-            st.markdown(
-                f"""
-                <div style="background:#f4f9ff; border: 2px solid #b8daff; border-left: 6px solid #0056b3;
-                            padding: 20px; border-radius: 8px; font-size: 1.08rem; line-height: 1.8;
-                            color: #1a252f; font-family: monospace;">
-                    {generated_text}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            st.write("")
-            st.code(generated_text, language=None)
-            st.caption(
-                f"Độ dài: {len(generated_text.split())} từ | Guidance: {visual_guidance} | Beam Size: {beam_size}"
-            )
-
-        with res_col2:
-            st.subheader("🩺 Top 5 Bệnh lý Có Xác suất Cao nhất (MeSH MLC)")
-
-            # Ghép tên nhãn và xác suất
-            label_probs = []
-            for i, p in enumerate(mlc_probs):
-                name = mesh_labels[i] if i < len(mesh_labels) else f"Tag #{i}"
-                label_probs.append((name, float(p)))
-
-            label_probs.sort(key=lambda x: x[1], reverse=True)
-
-            # Hiển thị Top 5 bệnh lý
-            st.markdown("Xác thực từ **Multi-Label Classification Head**:")
-            for tag_name, prob in label_probs[:5]:
-                prob_pct = prob * 100
-                st.write(f"**{tag_name.capitalize()}**: `{prob_pct:.2f}%`")
-                st.progress(min(max(prob, 0.0), 1.0))
-
-            with st.expander("🔍 Xem toàn bộ 65 nhãn MeSH và xác suất"):
-                import pandas as pd
-                df_all = pd.DataFrame(label_probs, columns=["Tên nhãn MeSH", "Xác suất (0-1)"])
-                df_all["Tỷ lệ (%)"] = (df_all["Xác suất (0-1)"] * 100).round(3)
-                st.dataframe(df_all, use_container_width=True, height=280)
-
-        st.divider()
-        st.warning(
-            "⚠️ **Lưu ý y khoa quan trọng:** Báo cáo trên được sinh tự động từ mô hình trí tuệ nhân tạo "
-            "trong khuôn khổ nghiên cứu thực nghiệm học thuật (IEEE TMI 2022). "
-            "Kết quả không thay thế chẩn đoán chuyên môn của bác sĩ chẩn đoán hình ảnh."
+    # English report (collapsed)
+    with st.expander("📄 Xem báo cáo gốc tiếng Anh (English Source)", expanded=False):
+        st.text_area(
+            label="English Report",
+            value=dx["en_report"],
+            height=120,
+            disabled=True,
+            key="en_report_display",
+            label_visibility="collapsed",
         )
 
+    st.markdown("</div>", unsafe_allow_html=True)
 
-if __name__ == "__main__":
+    # ── Section 2: Disease Probability Bars ─────────────────────────────────────
+    st.markdown('<div class="section-card"><div class="section-title">📊 Xác suất Bệnh lý (14 Nhóm CheXpert)</div>', unsafe_allow_html=True)
+
+    # Legend
+    st.markdown("""
+<div style="display:flex; gap:12px; margin-bottom:1rem; flex-wrap:wrap;">
+  <span><span style="background:#16A34A; border-radius:3px; padding:1px 8px; color:white; font-size:0.75rem;">■</span> &lt;25%</span>
+  <span><span style="background:#EAB308; border-radius:3px; padding:1px 8px; color:white; font-size:0.75rem;">■</span> 25–49%</span>
+  <span><span style="background:#F97316; border-radius:3px; padding:1px 8px; color:white; font-size:0.75rem;">■</span> 50–74%</span>
+  <span><span style="background:#DC2626; border-radius:3px; padding:1px 8px; color:white; font-size:0.75rem;">■</span> ≥75%</span>
+</div>
+""", unsafe_allow_html=True)
+
+    render_disease_bars(dx["ensemble_probs"])
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Section 3: Doctor Review Form ───────────────────────────────────────────
+    st.markdown('<div class="section-card"><div class="section-title">👨‍⚕️ Thẩm định của Bác sĩ</div>', unsafe_allow_html=True)
+
+    with st.form("doctor_review_form", clear_on_submit=False):
+        col_dr1, col_dr2 = st.columns(2)
+        with col_dr1:
+            doctor_name = st.text_input(
+                "Họ tên Bác sĩ",
+                value="BS. Chẩn đoán Hình ảnh",
+                key="doctor_name",
+            )
+        with col_dr2:
+            ai_evaluation = st.radio(
+                "Đánh giá kết quả AI",
+                options=["✅ Chính xác", "✏️ Cần chỉnh sửa", "❌ Sai lệch"],
+                index=0,
+                horizontal=True,
+                key="ai_eval",
+            )
+
+        verified_diseases = st.multiselect(
+            "Danh mục bệnh lý xác nhận (mặc định: xác suất AI ≥ 35%)",
+            options=VI_14_LABELS,
+            default=dx["default_diseases"],
+            key="verified_diseases",
+        )
+
+        doctor_notes = st.text_area(
+            "Chú thích lâm sàng & vị trí tổn thương",
+            placeholder="Nhập nhận định bổ sung: vị trí, kích thước, mức độ tổn thương...",
+            height=90,
+            key="doctor_notes",
+        )
+
+        final_conclusion = st.text_area(
+            "Kết luận chẩn đoán cuối cùng",
+            value=dx["vi_report"],
+            height=120,
+            key="final_conclusion",
+        )
+
+        submitted = st.form_submit_button("💾 Lưu thẩm định & Xuất phiếu kết quả")
+
+    if submitted:
+        case_id = f"CASE_{dx['timestamp']}"
+        ensemble_label = " + ".join(dx["contributing"])
+
+        record = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "case_id": case_id,
+            "model_used": ensemble_label,
+            "doctor_name": doctor_name,
+            "ai_evaluation": ai_evaluation,
+            "doctor_notes": doctor_notes,
+            "verified_diseases": "; ".join(verified_diseases) if isinstance(verified_diseases, list) else str(verified_diseases),
+            "final_clinical_conclusion": final_conclusion,
+            "ai_report_vi": dx["vi_report"],
+            "ai_report_en": dx["en_report"],
+        }
+
+        try:
+            save_doctor_review(REVIEWS_CSV_PATH, record)
+            st.success("✅ Đã lưu hồ sơ thẩm định thành công.")
+        except Exception as ex:
+            st.warning(f"⚠️ Lưu CSV thất bại: {ex}")
+
+        # Generate certificate
+        diseases_list = verified_diseases if isinstance(verified_diseases, list) else [str(verified_diseases)]
+        cert_text = export_clinical_certificate(
+            case_id=case_id,
+            model_name=ensemble_label,
+            doctor_name=doctor_name,
+            ai_eval=ai_evaluation,
+            verified_diseases=diseases_list,
+            final_conclusion=final_conclusion,
+            notes=doctor_notes,
+            ai_report_vi=dx["vi_report"],
+            ai_report_en=dx["en_report"],
+        )
+
+        st.download_button(
+            label="📥 Tải xuống Phiếu Kết quả (.txt)",
+            data=cert_text.encode("utf-8"),
+            file_name=f"phieu_chandoan_{case_id}.txt",
+            mime="text/plain",
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── History (collapsed) ──────────────────────────────────────────────────────
+    with st.expander("📁 Lịch sử Thẩm định đã lưu", expanded=False):
+        df = load_doctor_reviews(REVIEWS_CSV_PATH)
+        if df.empty:
+            st.info("Chưa có hồ sơ thẩm định nào được lưu.")
+        else:
+            st.dataframe(df.tail(20), width="stretch")
+
+
+# ─── ENTRY POINT ────────────────────────────────────────────────────────────────
+if __name__ == "__main__" or True:
     main()
