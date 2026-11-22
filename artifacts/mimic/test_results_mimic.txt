@@ -1,0 +1,13 @@
+Checkpoint: best_mimic.pt (Epoch 3, Full 3 Losses - CheXpert 14)
+Tập đánh giá: test (4143 mẫu)
+
+Metric            Score
+------------------------
+BLEU-1           0.0134
+BLEU-2           0.0081
+BLEU-3           0.0052
+BLEU-4           0.0035
+ROUGE-L          0.1663
+CIDEr            0.0385
+METEOR           0.1612
+------------------------

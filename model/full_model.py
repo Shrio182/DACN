@@ -90,6 +90,7 @@ class MulticriteriaTransformer(nn.Module):
         repetition_penalty: float = 1.2,
         visual_guidance: float = 0.8,
         temperature: float = 1.0,
+        no_repeat_ngram_size: int = 0,
     ) -> torch.Tensor:
         # Thuật toán sinh chuỗi báo cáo y khoa tự hồi quy (Autoregressive Generation)
         # Tích hợp Visual-Grounded Contrastive Guidance:
@@ -145,6 +146,19 @@ class MulticriteriaTransformer(nn.Module):
                             else:
                                 next_logits[b, token_id] = val * repetition_penalty
 
+                # Chặn lặp cụm từ n-gram (no_repeat_ngram_size)
+                if no_repeat_ngram_size > 1:
+                    for b in range(B):
+                        tokens_list = ys[b].tolist()
+                        n = no_repeat_ngram_size
+                        if len(tokens_list) >= n - 1:
+                            cur_prefix = tuple(tokens_list[-(n - 1):])
+                            for i in range(len(tokens_list) - n + 1):
+                                if tuple(tokens_list[i : i + n - 1]) == cur_prefix:
+                                    banned_tok = tokens_list[i + n - 1]
+                                    if banned_tok not in (bos_idx, eos_idx, self.mcfg.pad_idx):
+                                        next_logits[b, banned_tok] = -1e9
+
                 next_token = next_logits.argmax(dim=-1, keepdim=True)
                 next_token = torch.where(finished.unsqueeze(1), torch.full_like(next_token, eos_idx), next_token)
                 ys = torch.cat([ys, next_token], dim=1)
@@ -184,6 +198,18 @@ class MulticriteriaTransformer(nn.Module):
                                     l_step[token_id] = val / repetition_penalty
                                 else:
                                     l_step[token_id] = val * repetition_penalty
+
+                        # Chặn lặp cụm từ n-gram (no_repeat_ngram_size = 3)
+                        if no_repeat_ngram_size > 1:
+                            tokens_list = seq[0].tolist()
+                            n = no_repeat_ngram_size
+                            if len(tokens_list) >= n - 1:
+                                cur_prefix = tuple(tokens_list[-(n - 1):])
+                                for i in range(len(tokens_list) - n + 1):
+                                    if tuple(tokens_list[i : i + n - 1]) == cur_prefix:
+                                        banned_tok = tokens_list[i + n - 1]
+                                        if banned_tok not in (bos_idx, eos_idx, self.mcfg.pad_idx):
+                                            l_step[banned_tok] = -1e9
 
                         log_probs = torch.log_softmax(l_step, dim=-1)
                         topk_log_probs, topk_indices = torch.topk(log_probs, beam_size)
