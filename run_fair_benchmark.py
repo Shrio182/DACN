@@ -215,9 +215,18 @@ def build_metric_scorers():
 
 
 def tokenize_for_metrics(scorers, references, hypotheses):
+    def to_caption_objects(items):
+        return {
+            key: [
+                {"caption": sentence} if isinstance(sentence, str) else sentence
+                for sentence in values
+            ]
+            for key, values in items.items()
+        }
+
     return (
-        scorers["tokenizer"].tokenize(references),
-        scorers["tokenizer"].tokenize(hypotheses),
+        scorers["tokenizer"].tokenize(to_caption_objects(references)),
+        scorers["tokenizer"].tokenize(to_caption_objects(hypotheses)),
     )
 
 
@@ -557,7 +566,7 @@ def main():
             if device.type == "cuda":
                 torch.cuda.empty_cache()
     finally:
-        scorers["meteor"].close()
+        getattr(scorers["meteor"], "close", lambda: None)()
 
     save_results(results, output_dir)
     for result in results:

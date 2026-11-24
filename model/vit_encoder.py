@@ -46,9 +46,17 @@ class TransformerEncoderLayer(nn.Module):
         )
         self.norm2 = nn.LayerNorm(d_model)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, capture_attention: bool = False) -> torch.Tensor:
         # Multi-Head Self-Attention với residual connection và post-layer norm
-        a, _ = self.attn(x, x, x, need_weights=False)
+        a, attention = self.attn(
+            x,
+            x,
+            x,
+            need_weights=capture_attention,
+            average_attn_weights=True,
+        )
+        if capture_attention:
+            self.last_attention = attention
         x = self.norm1(x + a)
         x = self.norm2(x + self.ffn(x))
         return x
@@ -78,10 +86,54 @@ class ViTEncoder(nn.Module):
         x = self.patch_embed(x)                                    # (B, N, d)
         cls = self.cls_token.expand(B, -1, -1)                     # (B, 1, d)
         x = torch.cat([cls, x], dim=1) + self.pos_embed            # (B, N+1, d)
-        for layer in self.layers:
-            x = layer(x)
+        for index, layer in enumerate(self.layers):
+            x = layer(x, capture_attention=(index == len(self.layers) - 1))
         x = self.norm(x)
         return x[:, 1:], x[:, 0]                                   # regional features, cls token
+
+    @torch.no_grad()
+    def get_attention_heatmap(
+        self,
+        images: torch.Tensor,
+        img_size: int = 448,
+    ) -> torch.Tensor:
+        """Trích attention CLS→patch của tầng Encoder cuối (B,V,H,W)."""
+        if images.dim() == 4:
+            images = images.unsqueeze(1)
+        if images.dim() != 5:
+            raise ValueError("Expected (B,C,H,W) or (B,V,C,H,W)")
+
+        batch_size, view_count = images.shape[:2]
+        heatmaps = []
+        for view_index in range(view_count):
+            view = images[:, view_index]
+            patches = self.patch_embed(view)
+            cls = self.cls_token.expand(batch_size, -1, -1)
+            tokens = torch.cat((cls, patches), dim=1) + self.pos_embed
+
+            for index, layer in enumerate(self.layers):
+                tokens = layer(
+                    tokens,
+                    capture_attention=(index == len(self.layers) - 1),
+                )
+            tokens = self.norm(tokens)
+
+            cls_attention = self.layers[-1].last_attention[:, 0, 1:]
+            cls_attention = cls_attention / cls_attention.sum(
+                dim=-1, keepdim=True
+            ).clamp_min(1e-8)
+            side = int(cls_attention.size(-1) ** 0.5)
+            if side * side != cls_attention.size(-1):
+                raise RuntimeError("Patch count cannot form a square attention grid")
+            heatmaps.append(cls_attention.reshape(batch_size, 1, side, side))
+
+        combined = torch.cat(heatmaps, dim=1)
+        return torch.nn.functional.interpolate(
+            combined,
+            size=(img_size, img_size),
+            mode="bilinear",
+            align_corners=False,
+        )
 
     def forward(self, images: torch.Tensor):
         # Đầu vào:

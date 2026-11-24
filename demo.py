@@ -23,6 +23,10 @@ from clinical_utils import (
     save_doctor_review,
     load_doctor_reviews,
     export_clinical_certificate,
+    format_clinical_report,
+    split_clinical_report,
+    has_spinal_degeneration,
+    SPINAL_DEGENERATION_VI,
 )
 
 try:
@@ -235,12 +239,22 @@ div[data-testid="stMain"] {
 /* Buttons */
 div[data-testid="stButton"] > button {
     background: #0F172A !important;
-    color: #FFFFFF !important;
     border: none !important;
     border-radius: 8px !important;
     padding: 0.55rem 1.4rem !important;
     font-weight: 600 !important;
     font-size: 0.95rem !important;
+}
+div.stButton > button,
+div.stButton > button p,
+div.stButton > button span,
+div.stFormSubmitButton > button,
+div.stFormSubmitButton > button p,
+[data-testid="stBaseButton-secondary"] *,
+[data-testid="stBaseButton-primary"] * {
+    color: #ffffff !important;
+    opacity: 1 !important;
+    font-weight: 600 !important;
 }
 div[data-testid="stButton"] > button:hover {
     background: #1E3A5F !important;
@@ -472,6 +486,43 @@ def run_model_inference(entry: dict, frontal_tensor: torch.Tensor, lateral_tenso
 
     return report_en, probs_np
 
+
+def create_attention_overlay(
+    pil_image: Image.Image,
+    model,
+    device,
+    frontal_tensor: torch.Tensor,
+    lateral_tensor: torch.Tensor,
+) -> Image.Image:
+    """Overlay the final encoder CLS attention on the frontal radiograph."""
+    frontal = frontal_tensor.to(device)
+    lateral = lateral_tensor.to(device)
+    images = torch.stack(
+        [frontal.squeeze(0), lateral.squeeze(0)],
+        dim=0,
+    ).unsqueeze(0)
+    heatmaps = model.encoder.get_attention_heatmap(images, img_size=448)
+    attention = heatmaps[0, 0].detach().float().cpu().numpy()
+    if not np.isfinite(attention).all():
+        raise ValueError("Encoder attention contains non-finite values.")
+    heatmap = (
+        (attention - attention.min())
+        / (attention.max() - attention.min() + 1e-8)
+    )
+
+    heatmap_rgb = np.stack(
+        (
+            np.clip(1.5 - np.abs(4 * heatmap - 3), 0, 1),
+            np.clip(1.5 - np.abs(4 * heatmap - 2), 0, 1),
+            np.clip(1.5 - np.abs(4 * heatmap - 1), 0, 1),
+        ),
+        axis=-1,
+    )
+    heatmap_rgb = (heatmap_rgb * 255).astype(np.uint8)
+    original = pil_image.convert("RGB").resize((448, 448))
+    colored_heatmap = Image.fromarray(heatmap_rgb, mode="RGB")
+    return Image.blend(original, colored_heatmap, alpha=0.45).resize(pil_image.size)
+
 def map_archive_to_14(probs_65: np.ndarray) -> np.ndarray:
     out = np.zeros(14, dtype=np.float32)
     for chex_idx, mesh_indices in MESH_IDX_MAP.items():
@@ -656,6 +707,9 @@ def translate_sentence_vi(s: str) -> str:
     if not s_clean:
         return ""
     s_low = s_clean.lower()
+
+    if has_spinal_degeneration(s_clean):
+        return SPINAL_DEGENERATION_VI
 
     # Khớp trước với bộ từ điển y khoa chuẩn
     for keys, vi in FALLBACK_PHRASE_DICT:
@@ -868,11 +922,25 @@ def main():
 
     # Hiển thị ảnh nếu đã có ảnh Frontal hợp lệ
     if pil_frontal is not None and pil_lateral is not None:
-        col_img1, col_img2 = st.columns(2)
-        with col_img1:
-            st.image(pil_frontal, caption="Phim X-quang Thẳng (Frontal)", width="stretch")
-        with col_img2:
-            st.image(pil_lateral, caption=lateral_caption, width="stretch")
+        heatmap_image = st.session_state.get("diagnosis", {}).get("heatmap_image")
+        if heatmap_image is not None:
+            col_img1, col_heatmap, col_img2 = st.columns(3)
+            with col_img1:
+                st.image(pil_frontal, caption="Phim X-quang Thẳng (Frontal)", width="stretch")
+            with col_heatmap:
+                st.image(
+                    heatmap_image,
+                    caption="Bản đồ chú ý phủ trên phim Frontal",
+                    width="stretch",
+                )
+            with col_img2:
+                st.image(pil_lateral, caption=lateral_caption, width="stretch")
+        else:
+            col_img1, col_img2 = st.columns(2)
+            with col_img1:
+                st.image(pil_frontal, caption="Phim X-quang Thẳng (Frontal)", width="stretch")
+            with col_img2:
+                st.image(pil_lateral, caption=lateral_caption, width="stretch")
 
         # ── Run Analysis Button ──────────────────────────────────────────────────
         analyze_clicked = st.button(
@@ -931,6 +999,21 @@ def main():
                 vi_report = format_vietnamese_clinical_report(
                     best_en_report, ensemble_probs, CHEXPERT_CLASSES, VI_14_LABELS
                 )
+                clean_en_report = format_clinical_report(best_en_report)
+                structured_en = split_clinical_report(clean_en_report)
+
+                heatmap_image = None
+                for key in results:
+                    entry = all_entries.get(key)
+                    if entry and "model" in entry:
+                        heatmap_image = create_attention_overlay(
+                            pil_frontal,
+                            entry["model"],
+                            entry["device"],
+                            frontal_tensor,
+                            lateral_tensor,
+                        )
+                        break
 
                 contributing = [all_entries[k]["label"] for k in results]
 
@@ -945,6 +1028,9 @@ def main():
                 st.session_state["diagnosis"] = {
                     "vi_report": vi_report,
                     "en_report": best_en_report,
+                    "clean_en_report": clean_en_report,
+                    "structured_en": structured_en,
+                    "heatmap_image": heatmap_image,
                     "ensemble_probs": ensemble_probs,
                     "contributing": contributing,
                     "model_status": model_status,
@@ -967,10 +1053,36 @@ def main():
 
     st.markdown(f'<div class="vi-report">{dx["vi_report"]}</div>', unsafe_allow_html=True)
 
+    structured_en = dx.get("structured_en", split_clinical_report(dx["en_report"]))
+    st.markdown(
+        '<div class="section-card"><div class="section-title">FINDINGS</div>'
+        f'<div class="vi-report">{structured_en["findings"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="section-card"><div class="section-title">IMPRESSION</div>'
+        f'<div class="vi-report">{structured_en["impression"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("📄 Raw Output nguyên bản", expanded=False):
+        st.text_area(
+            label="Raw model output",
+            value=dx["en_report"],
+            height=130,
+            disabled=True,
+            key="raw_report_display",
+            label_visibility="collapsed",
+        )
+
     with st.expander("📄 Xem báo cáo tiếng Anh đã ngắt câu chuẩn hóa (Clean English Source)", expanded=False):
         st.text_area(
             label="English Report",
-            value=dx["en_report"],
+            value=(
+                dx["clean_en_report"]
+                if "clean_en_report" in dx
+                else format_clinical_report(dx["en_report"])
+            ),
             height=130,
             disabled=True,
             key="en_report_display",

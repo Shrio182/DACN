@@ -80,6 +80,15 @@ class MulticriteriaTransformer(nn.Module):
         return torch.sigmoid(logits)
 
     @torch.no_grad()
+    def get_attention_heatmap(
+        self,
+        images: torch.Tensor,
+        img_size: int = 448,
+    ) -> torch.Tensor:
+        """Return attention heatmap without adding parameters to the checkpoint."""
+        return self.encoder.get_attention_heatmap(images, img_size=img_size)
+
+    @torch.no_grad()
     def generate(
         self,
         images: torch.Tensor,
