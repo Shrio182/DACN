@@ -97,9 +97,9 @@ def run_tests():
 
     results = {}
     for key in ok_keys:
-        report_en, probs_np = demo.run_model_inference(all_entries[key], frontal_t, None)
+        report_en, probs_np, out_ids = demo.run_model_inference(all_entries[key], frontal_t, None)
         assert isinstance(report_en, str) and len(report_en) > 0, f"Empty output for {key}"
-        results[key] = (report_en, probs_np)
+        results[key] = (report_en, probs_np, out_ids)
         print(f"{PASS} Inference [{key}]: {report_en[:85]}")
 
     mlc_probs = demo._compute_mlc_consensus(results, all_entries)
@@ -109,21 +109,34 @@ def run_tests():
     assert structured["findings"] and structured["impression"], "Empty FINDINGS/IMPRESSION"
     print(f"{PASS} Selected [{best_key}] -> FINDINGS: {structured['findings'][:75]} | IMPRESSION: {structured['impression'][:60]}")
 
-    hm_img, attn_info = demo.create_attention_overlay(
+    hm_entry = all_entries[best_key]
+    hm_img = demo.create_attention_overlay(
         pil_frontal,
-        all_entries[best_key]["model"],
-        all_entries[best_key]["device"],
+        hm_entry["model"],
+        hm_entry["device"],
         frontal_t,
         None,
+        token_ids=results[best_key][2],
+        special_ids=(hm_entry["bos"], hm_entry["eos"], hm_entry["pad"]),
     )
     assert hm_img.size == pil_frontal.size, f"Expected heatmap size {pil_frontal.size}, got {hm_img.size}"
-    assert len(attn_info["peak_patches"]) == 3 and len(attn_info["top_zones"]) == 3
-    html = demo.render_heatmap_explanation(attn_info)
-    assert "ViT Attention Explanation" in html and "[CLS]" in html
-    top_p = attn_info["peak_patches"][0]
+    # Verify border attention sink suppression in ViTEncoder
+    import torch
+    images = torch.stack([frontal_t.squeeze(0), frontal_t.squeeze(0)], dim=0).unsqueeze(0).to(hm_entry["device"])
+    cross_grid = demo._extract_decoder_cross_attention(
+        hm_entry["model"], images, results[best_key][2], (hm_entry["bos"], hm_entry["eos"], hm_entry["pad"])
+    )
+    _, smoothed_grid = hm_entry["model"].encoder.get_attention_heatmap(
+        images, img_size=448, cross_attention=cross_grid, return_patch_grid=True
+    )
+    g = smoothed_grid[0, 0].detach().cpu().numpy()
+    border_vals = np.concatenate([g[0, :], g[-1, :], g[1:-1, 0], g[1:-1, -1]])
+    inner_vals = g[1:-1, 1:-1]
+    assert border_vals.max() < inner_vals.max(), (
+        f"Expected border max ({border_vals.max():.5f}) < inner max ({inner_vals.max():.5f})"
+    )
     print(
-        f"{PASS} Heatmap size={hm_img.size} | top_patch=({top_p['row']},{top_p['col']}) "
-        f"-> {top_p['zone_vi']} ({top_p['rel_pct']}%)"
+        f"{PASS} Heatmap size={hm_img.size} | border_max={border_vals.max():.5f} < inner_max={inner_vals.max():.5f}"
     )
     return errors
 

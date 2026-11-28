@@ -1,7 +1,9 @@
 # demo.py
 # Hệ thống Hỗ trợ Chẩn đoán Hình ảnh X-Quang Ngực
 # Kiến trúc bài báo gốc: Pure Transformer (ViTEncoder + MemoryAugmentedDecoder)
-# Giao diện 2 cột đối chiếu: Báo cáo Bác sĩ (Ground Truth) vs. Báo cáo Mô hình AI | Ảnh X-Quang & Attention Heatmap
+# Giao diện 2 cột đối chiếu gọn trên 1 màn hình:
+#   Cột trái: Tải ảnh & Ảnh Frontal gốc song song với Attention Heatmap
+#   Cột phải: Báo cáo gốc của Bác sĩ (Ground Truth) vs. Báo cáo Mô hình AI (FINDINGS / IMPRESSION)
 # IEEE TMI 2022 – Multicriteria Transformer
 
 import ast
@@ -15,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 import torch
-from PIL import Image
+from PIL import Image, ImageFilter
 from torchvision import transforms
 
 from clinical_utils import format_clinical_report, split_clinical_report
@@ -103,7 +105,7 @@ def _build_mesh_index_map():
 
 _MESH_IDX_MAP = _build_mesh_index_map()
 
-# ─── PAGE CONFIG & CSS ──────────────────────────────────────────────────────────
+# ─── PAGE CONFIG & COMPACT CSS ──────────────────────────────────────────────────
 st.set_page_config(
     page_title="Multicriteria Transformer · Đọc phim X-Quang Ngực",
     page_icon="🫁",
@@ -114,6 +116,7 @@ st.set_page_config(
 st.markdown("""
 <style>
 section[data-testid="stSidebar"], button[data-testid="collapsedControl"] { display: none !important; }
+header[data-testid="stHeader"] { height: 0.4rem !important; min-height: 0.4rem !important; background: #FFFFFF !important; }
 .stApp, section[data-testid="stAppViewContainer"], div[data-testid="stMain"] {
     background: #FFFFFF !important;
     color: #0F172A !important;
@@ -126,50 +129,54 @@ section[data-testid="stSidebar"], button[data-testid="collapsedControl"] { displ
 .stApp [data-testid="stExpander"] summary *,
 .stApp [data-testid="stFileUploader"] *,
 .stApp [data-testid="stAlert"] * { color: #0F172A !important; }
-.main .block-container { padding: 1.4rem 2.2rem !important; max-width: 1380px; margin: auto; }
+.main .block-container {
+    padding: 0.65rem 1.5rem 0.9rem 1.5rem !important;
+    max-width: 1440px;
+    margin: auto;
+}
 .clinical-header {
     background: #FFFFFF;
     color: #0F172A !important;
-    padding: 1.25rem 1.8rem;
-    border-radius: 12px;
+    padding: 0.65rem 1.2rem;
+    border-radius: 10px;
     border: 1px solid #CBD5E1;
-    border-top: 5px solid #0F172A;
-    margin-bottom: 1.4rem;
-    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    border-top: 4px solid #0F172A;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
-.clinical-header h1 { color: #0F172A !important; margin: 0; font-size: 1.5rem; font-weight: 700; }
-.clinical-header p { color: #475569 !important; margin: 0.3rem 0 0 0; font-size: 0.88rem; }
+.clinical-header h1 { color: #0F172A !important; margin: 0; font-size: 1.28rem; font-weight: 700; }
+.clinical-header p { color: #475569 !important; margin: 0.15rem 0 0 0; font-size: 0.8rem; }
 .section-card {
     background: #F8FAFC;
     border: 1px solid #CBD5E1;
-    border-radius: 10px;
-    padding: 1.1rem 1.35rem;
-    margin-bottom: 1.15rem;
+    border-radius: 9px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
 }
 .section-title {
-    font-size: 0.94rem;
+    font-size: 0.86rem;
     font-weight: 700;
     color: #0F172A;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     border-bottom: 2px solid #0F172A;
-    padding-bottom: 0.4rem;
-    margin-bottom: 0.85rem;
+    padding-bottom: 0.3rem;
+    margin-bottom: 0.55rem;
 }
 .sub-label {
-    font-size: 0.84rem;
+    font-size: 0.8rem;
     font-weight: 700;
     color: #334155;
-    margin: 0.55rem 0 0.25rem 0;
+    margin: 0.4rem 0 0.2rem 0;
     letter-spacing: 0.03em;
 }
 .report-box {
     background: #FFFFFF;
     border-left: 4px solid #1E3A5F;
     border-radius: 6px;
-    padding: 0.95rem 1.2rem;
-    font-size: 0.96rem;
-    line-height: 1.75;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.9rem;
+    line-height: 1.55;
     color: #0F172A;
     white-space: pre-wrap;
     border-top: 1px solid #E2E8F0;
@@ -180,38 +187,38 @@ section[data-testid="stSidebar"], button[data-testid="collapsedControl"] { displ
     background: #F0FDF4;
     border-left: 4px solid #16A34A;
     border-radius: 6px;
-    padding: 0.95rem 1.2rem;
-    font-size: 0.95rem;
-    line-height: 1.75;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.9rem;
+    line-height: 1.55;
     color: #0F172A;
     white-space: pre-wrap;
     border-top: 1px solid #BBF7D0;
     border-right: 1px solid #BBF7D0;
     border-bottom: 1px solid #BBF7D0;
 }
-.heatmap-explain {
-    background: #FFF7ED;
-    border: 1px solid #FED7AA;
-    border-left: 4px solid #EA580C;
+.img-placeholder {
+    height: 340px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: #F1F5F9;
+    border: 1px dashed #94A3B8;
     border-radius: 8px;
-    padding: 0.95rem 1.15rem;
-    font-size: 0.87rem;
-    line-height: 1.68;
-    color: #0F172A;
-    margin-top: 0.65rem;
-    margin-bottom: 0.9rem;
+    color: #475569;
+    font-size: 0.86rem;
+    padding: 1rem;
 }
-.upload-hint { color: #64748B; font-size: 0.8rem; margin-top: 0.25rem; margin-bottom: 0.6rem; }
 .dataset-badge {
     display: inline-block;
     background: #EFF6FF;
     color: #1D4ED8 !important;
     border: 1px solid #BFDBFE;
     border-radius: 20px;
-    padding: 2px 10px;
-    font-size: 0.75rem;
+    padding: 1px 9px;
+    font-size: 0.72rem;
     font-weight: 600;
-    margin: 2px 4px 6px 0;
+    margin: 0 4px 4px 0;
 }
 .split-badge {
     display: inline-block;
@@ -219,18 +226,31 @@ section[data-testid="stSidebar"], button[data-testid="collapsedControl"] { displ
     color: #047857 !important;
     border: 1px solid #A7F3D0;
     border-radius: 20px;
-    padding: 2px 10px;
-    font-size: 0.75rem;
+    padding: 1px 9px;
+    font-size: 0.72rem;
     font-weight: 600;
-    margin: 2px 4px 6px 0;
+    margin: 0 4px 4px 0;
+}
+/* Compact image height (320px-360px) so images & reports fit simultaneously in 1 viewport */
+div[data-testid="stImage"] img {
+    height: 340px !important;
+    max-height: 350px !important;
+    width: 100% !important;
+    object-fit: contain !important;
+    background: #0F172A !important;
+    border-radius: 8px !important;
+}
+div[data-testid="stFileUploader"] section {
+    padding: 0.45rem 0.65rem !important;
 }
 div[data-testid="stButton"] > button {
     background: #0F172A !important;
     border: none !important;
     border-radius: 8px !important;
-    padding: 0.55rem 1.4rem !important;
+    padding: 0.48rem 1.2rem !important;
     font-weight: 600 !important;
     width: 100%;
+    margin-bottom: 0.45rem !important;
 }
 div.stButton > button, div.stButton > button p, div.stButton > button span,
 [data-testid="stBaseButton-secondary"] *, [data-testid="stBaseButton-primary"] * {
@@ -245,7 +265,7 @@ div[data-testid="stTextArea"] textarea:disabled {
     -webkit-text-fill-color: #0F172A !important;
     opacity: 1 !important;
 }
-footer, header { background: #FFFFFF !important; }
+footer { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -387,7 +407,7 @@ def run_model_inference(entry: dict, frontal_tensor: torch.Tensor, lateral_tenso
         probs = model.predict_mlc(images)
         probs_np = probs[0].cpu().numpy()
 
-    return report_en, probs_np
+    return report_en, probs_np, out_ids
 
 
 def _map_archive_to_core(probs_65: np.ndarray) -> np.ndarray:
@@ -400,7 +420,7 @@ def _map_archive_to_core(probs_65: np.ndarray) -> np.ndarray:
 
 def _compute_mlc_consensus(results: dict, all_entries: dict) -> np.ndarray:
     total_weight, weighted_sum = 0.0, np.zeros(14, dtype=np.float32)
-    for key, (_, probs_np) in results.items():
+    for key, (_, probs_np, _) in results.items():
         w = all_entries[key]["weight"]
         probs14 = (
             _map_archive_to_core(probs_np)
@@ -431,7 +451,7 @@ def _score_report_candidate(raw_en: str, clean_en: str, mlc_probs: np.ndarray, m
 def select_best_report(results: dict, all_entries: dict, mlc_probs: np.ndarray) -> tuple[str, str]:
     """Return (winning_model_key, raw_english_report) with highest quality score."""
     scored = []
-    for key, (raw_en, _) in results.items():
+    for key, (raw_en, _, _) in results.items():
         if not raw_en:
             continue
         clean_en = format_clinical_report(raw_en)
@@ -445,66 +465,72 @@ def select_best_report(results: dict, all_entries: dict, mlc_probs: np.ndarray) 
     return scored[0][1], scored[0][2]
 
 
-# ─── ENHANCED VIT ATTENTION HEATMAP & ANATOMY EXPLANATION ───────────────────────
-ANATOMY_ZONES = [
-    # (row_start, row_end_excl, col_start, col_end_excl, name_vi, name_en)
-    # Note: Chest X-ray PA/AP radiological convention: image left (col 0..4) = patient RIGHT; image right (col 9..13) = patient LEFT.
-    (0, 4, 0, 5, "Đỉnh phổi phải", "right lung apex"),
-    (0, 4, 9, 14, "Đỉnh phổi trái", "left lung apex"),
-    (4, 9, 0, 5, "Vùng giữa phổi phải", "right mid lung zone"),
-    (4, 9, 9, 14, "Vùng giữa phổi trái", "left mid lung zone"),
-    (9, 14, 0, 5, "Đáy phổi phải / góc sườn hoành phải", "right lower lung / costophrenic angle"),
-    (9, 14, 9, 14, "Đáy phổi trái / góc sườn hoành trái", "left lower lung / costophrenic angle"),
-    (3, 11, 5, 9, "Vùng bóng tim – trung thất", "cardiac silhouette and mediastinum"),
-]
+# ─── NATURAL ATTENTION HEATMAP (BORDER-SUPPRESSED + DECODER CROSS-ATTENTION) ────
+@torch.no_grad()
+def _extract_decoder_cross_attention(
+    model,
+    images: torch.Tensor,
+    token_ids: torch.Tensor,
+    special_ids: tuple[int, ...] = (),
+) -> torch.Tensor | None:
+    """
+    Extract averaged Decoder Cross-Attention over Frontal spatial patches (14x14)
+    from the generated report tokens without adding checkpoint parameters.
+    """
+    if token_ids is None or token_ids.numel() == 0:
+        return None
+    decoder = getattr(model, "decoder", None)
+    if decoder is None:
+        return None
 
+    regional_features, _ = model.encoder(images)
+    num_patches = model.encoder.patch_embed.num_patches
+    side = int(num_patches ** 0.5)
+    if side * side != num_patches:
+        return None
 
-def _coord_to_anatomy(row: int, col: int) -> tuple[str, str]:
-    """Map a spatial patch coordinate (row, col) on the 14x14 grid to an anatomical zone."""
-    for r0, r1, c0, c1, name_vi, name_en in ANATOMY_ZONES:
-        if r0 <= row < r1 and c0 <= col < c1:
-            return name_vi, name_en
-    if row < 4:
-        return "Vùng trung thất trên / đỉnh lồng ngực", "upper mediastinum / thoracic inlet"
-    if row >= 11:
-        return "Vùng vòm hoành – đáy lồng ngực", "diaphragm / lower thorax"
-    return "Vùng rốn phổi – trung thất", "hilar / mediastinal region"
+    max_seq = decoder.pos_embed.size(1)
+    tgt_ids = token_ids[:, :max_seq]
+    T = tgt_ids.size(1)
+    if T == 0:
+        return None
 
+    x = decoder.token_embed(tgt_ids) + decoder.pos_embed[:, :T, :]
+    mask = decoder._causal_mask(T, x.device)
 
-def _analyze_attention_grid(grid_14x14: np.ndarray, top_k: int = 3) -> dict:
-    """Extract top anatomical zones and peak patch coordinates from the 14x14 [CLS] attention grid."""
-    flat_grid = grid_14x14.astype(np.float64)
-    total_mass = float(flat_grid.sum()) + 1e-8
+    layer_maps = []
+    for layer in decoder.layers:
+        a, _ = layer.self_attn(x, x, x, attn_mask=mask, need_weights=False)
+        x = layer.norm1(x + a)
+        a, cross_w = layer.cross_attn(
+            x,
+            regional_features,
+            regional_features,
+            need_weights=True,
+            average_attn_weights=True,
+        )
+        x = layer.norm2(x + a)
+        x = layer.norm3(x + layer.ffn(x))
+        # Frontal patches occupy [0 : num_patches]
+        layer_maps.append(cross_w[:, :, :num_patches])
 
-    zone_scores = []
-    for r0, r1, c0, c1, name_vi, name_en in ANATOMY_ZONES:
-        patch_block = flat_grid[r0:r1, c0:c1]
-        mean_val = float(patch_block.mean())
-        share_pct = float(patch_block.sum() / total_mass * 100.0)
-        zone_scores.append((mean_val, share_pct, name_vi, name_en))
-    zone_scores.sort(key=lambda x: x[0], reverse=True)
+    if not layer_maps:
+        return None
 
-    # Top peak coordinates on the 14x14 spatial patch grid
-    top_indices = np.argsort(flat_grid.ravel())[::-1][:top_k]
-    peak_patches = []
-    max_patch = float(flat_grid.max()) + 1e-8
-    for flat_idx in top_indices:
-        r, c = divmod(int(flat_idx), grid_14x14.shape[1])
-        val = float(flat_grid[r, c])
-        name_vi, name_en = _coord_to_anatomy(r, c)
-        peak_patches.append({
-            "row": r,
-            "col": c,
-            "rel_pct": int(round(val / max_patch * 100.0)),
-            "zone_vi": name_vi,
-            "zone_en": name_en,
-        })
+    # Average across all decoder layers for balanced spatial grounding
+    cross_mean = torch.stack(layer_maps, dim=0).mean(dim=0)  # (B, T, num_patches)
 
-    return {
-        "top_zones": zone_scores[:top_k],
-        "peak_patches": peak_patches,
-        "grid_shape": grid_14x14.shape,
-    }
+    # Keep only valid report word tokens (ignore <bos>, <eos>, <pad>)
+    valid_mask = torch.ones_like(tgt_ids, dtype=torch.bool)
+    for sid in special_ids:
+        valid_mask &= tgt_ids != sid
+    if valid_mask.any():
+        weights = valid_mask[0]
+        token_avg = cross_mean[0, weights].mean(dim=0)
+    else:
+        token_avg = cross_mean[0].mean(dim=0)
+
+    return token_avg.reshape(1, 1, side, side)
 
 
 def create_attention_overlay(
@@ -513,10 +539,14 @@ def create_attention_overlay(
     device,
     frontal_tensor: torch.Tensor,
     lateral_tensor: torch.Tensor | None,
-) -> tuple[Image.Image, dict]:
+    token_ids: torch.Tensor | None = None,
+    special_ids: tuple[int, ...] = (),
+) -> Image.Image:
     """
-    Extract final encoder [CLS]-to-patch attention, enhance contrast (min-max + gamma + threshold),
-    render vivid red/orange/yellow hotspots over the Frontal radiograph, and analyze spatial patches.
+    Generate natural thermal attention overlay over the Frontal radiograph:
+    - Suppresses ViT outer border attention sinks (1-cell perimeter)
+    - Prioritizes Decoder Cross-Attention combined with ViT [CLS] attention
+    - Smooths with Gaussian blur before/after interpolation & uses soft alpha blending
     """
     frontal = frontal_tensor.to(device)
     if lateral_tensor is not None:
@@ -525,40 +555,44 @@ def create_attention_overlay(
     else:
         images = torch.stack([frontal.squeeze(0), frontal.squeeze(0)], dim=0).unsqueeze(0)
 
-    upsampled, patch_grid = model.encoder.get_attention_heatmap(
-        images, img_size=448, return_patch_grid=True
+    cross_grid = _extract_decoder_cross_attention(
+        model, images, token_ids, special_ids=special_ids
     )
-    attention_448 = upsampled[0, 0].detach().float().cpu().numpy()
-    grid_14 = patch_grid[0, 0].detach().float().cpu().numpy()
+    heatmaps = model.encoder.get_attention_heatmap(
+        images, img_size=448, cross_attention=cross_grid
+    )
+    attention_448 = heatmaps[0, 0].detach().float().cpu().numpy()
 
     if not np.isfinite(attention_448).all():
         raise ValueError("Encoder attention contains non-finite values.")
 
-    # Contrast normalization: min-max stretch + percentile clip + gamma sharpening
-    p_low = float(np.percentile(attention_448, 15))
-    p_high = float(np.max(attention_448))
+    # Smooth percentile stretch without hard binary thresholding (avoids harsh red rings/patches)
+    p_low = float(np.percentile(attention_448, 12))
+    p_high = float(np.percentile(attention_448, 99.5))
     norm = np.clip((attention_448 - p_low) / (p_high - p_low + 1e-8), 0.0, 1.0)
 
-    # Gamma > 1 suppresses background clutter; threshold isolates active pathological hotspots
-    gamma = 1.25
-    norm = np.power(norm, gamma)
-    threshold = 0.30
-    active = np.clip((norm - threshold) / (1.0 - threshold + 1e-8), 0.0, 1.0)
+    # Gentle Gaussian blur on the 448x448 map for natural, continuous clinical contours
+    norm_u8 = (norm * 255.0).astype(np.uint8)
+    norm_blurred = np.asarray(
+        Image.fromarray(norm_u8, mode="L").filter(ImageFilter.GaussianBlur(radius=8)),
+        dtype=np.float32,
+    ) / 255.0
+    norm = np.clip((norm_blurred - norm_blurred.min()) / (norm_blurred.max() - norm_blurred.min() + 1e-8), 0.0, 1.0)
 
-    # Vivid hotspot colormap: yellow (low-active) -> orange -> bright crimson red (peak)
-    # R stays bright red/yellow (255), G drops from 240 -> 20, B drops from 30 -> 0
-    r_chan = np.full_like(active, 255.0)
-    g_chan = 240.0 * (1.0 - np.power(active, 0.85)) + 15.0
-    b_chan = 30.0 * (1.0 - active)
+    # Harmonious thermal gradient: transparent cool background -> soft yellow/amber -> warm red peaks
+    intensity = np.power(norm, 1.25)
+    r_chan = np.clip(60.0 + 195.0 * np.power(intensity, 0.70), 0.0, 255.0)
+    g_chan = np.clip(225.0 * (1.0 - np.power(intensity, 1.35)) + 30.0 * intensity, 0.0, 255.0)
+    b_chan = np.clip(90.0 * np.power(1.0 - intensity, 2.0), 0.0, 255.0)
 
-    # Alpha transparency: 0 on background (keeps radiograph sharp), up to 0.72 on peak hotspots
-    alpha_chan = np.where(norm >= threshold, 0.18 + 0.54 * active, 0.0)
+    # Moderate smooth alpha (peaks around 0.45, fades smoothly to 0 so lungs & mediastinum stay clear)
+    alpha_chan = 0.46 * np.power(intensity, 1.15)
 
     rgba_map = np.stack(
         [
-            np.clip(r_chan, 0, 255).astype(np.uint8),
-            np.clip(g_chan, 0, 255).astype(np.uint8),
-            np.clip(b_chan, 0, 255).astype(np.uint8),
+            r_chan.astype(np.uint8),
+            g_chan.astype(np.uint8),
+            b_chan.astype(np.uint8),
             np.clip(alpha_chan * 255.0, 0, 255).astype(np.uint8),
         ],
         axis=-1,
@@ -567,51 +601,7 @@ def create_attention_overlay(
         pil_image.size, Image.Resampling.BILINEAR
     )
     base_rgba = pil_image.convert("RGBA")
-    composited = Image.alpha_composite(base_rgba, overlay_layer).convert("RGB")
-
-    attn_info = _analyze_attention_grid(grid_14, top_k=3)
-    return composited, attn_info
-
-
-def render_heatmap_explanation(attn_info: dict) -> str:
-    """Render HTML explanation box detailing spatial patch coordinates & ViT [CLS] mechanism."""
-    if not attn_info:
-        return ""
-    top_zones = attn_info.get("top_zones", [])
-    peak_patches = attn_info.get("peak_patches", [])
-    gh, gw = attn_info.get("grid_shape", (14, 14))
-
-    zone_lines = []
-    max_zone_score = max((z[0] for z in top_zones), default=1e-8) + 1e-8
-    for mean_val, share_pct, name_vi, _ in top_zones:
-        rel_pct = min(100, int(round(mean_val / max_zone_score * 100)))
-        zone_lines.append(
-            f"• <b>{name_vi}</b> — cường độ tương đối <b>{rel_pct}%</b> "
-            f"(chiếm {share_pct:.1f}% tổng attention)"
-        )
-
-    patch_lines = []
-    for p in peak_patches:
-        patch_lines.append(
-            f"• Patch <code>(hàng {p['row']}, cột {p['col']})</code> / lưới {gh}×{gw} "
-            f"→ <b>{p['zone_vi']}</b> ({p['rel_pct']}% đỉnh)"
-        )
-
-    zones_en = ", ".join(dict.fromkeys(z[3] for z in top_zones))
-    return f"""
-<div class="heatmap-explain">
-  <b>🔍 Giải thích vùng tập trung (ViT Attention Explanation)</b><br><br>
-  <b>1. Tọa độ patch chú ý cao nhất (lưới không gian {gh}×{gw}):</b><br>
-  {'<br>'.join(patch_lines)}<br><br>
-  <b>2. Vùng giải phẫu trọng tâm:</b><br>
-  {'<br>'.join(zone_lines)}<br><br>
-  <b>3. Cơ chế suy luận của Transformer:</b> Token <code>[CLS]</code> ở tầng Encoder cuối cùng
-  gán trọng số Self-Attention cao cho các patch thuộc <i>{zones_en}</i> — nơi có biến đổi
-  mật độ cản quang bất thường (đám mờ, đông đặc, bóng tim, tràn dịch hoặc đường viền giải phẫu)
-  — nhằm tổng hợp đặc trưng thị giác truyền qua Cross-Attention cho Decoder sinh câu mô tả
-  bệnh lý trong <b>FINDINGS</b> và <b>IMPRESSION</b>.
-</div>
-"""
+    return Image.alpha_composite(base_rgba, overlay_layer).convert("RGB")
 
 
 # ─── GROUND TRUTH INDEX & LOOKUP ────────────────────────────────────────────────
@@ -635,7 +625,6 @@ def _extract_mimic_report_text(report_field) -> str:
 
     if not candidates:
         return ""
-    # Prefer the first report that contains non-trivial findings or impression text
     for c in candidates:
         cleaned = re.sub(r"\b(?:findings|impression)\s*:\s*", "", c, flags=re.IGNORECASE).strip()
         if len(cleaned) >= 15:
@@ -662,7 +651,6 @@ def _parse_verbatim_sections(report_text: str) -> tuple[str, str]:
         findings = text[m_find.end() :].strip()
         return (findings if findings else "(không có)"), "(không có trong dữ liệu gốc)"
 
-    # Split verbatim sentences cleanly without deleting XXXX or mutating doctor text
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
     if len(sentences) >= 2:
         findings_sents = []
@@ -726,7 +714,6 @@ def _load_gt_index():
                     _add_prefix(uid, record)
                     for img_path in item.get("image_path", []):
                         p = Path(img_path)
-                        # e.g. CXR2384_IM-0942/0.png -> cxr2384_im-0942_0 & cxr2384_im-0942/0
                         if p.parent.name and p.parent.name != ".":
                             _add_exact(f"{p.parent.name}_{p.stem}", record)
                             _add_exact(f"{p.parent.name}/{p.stem}", record)
@@ -767,7 +754,6 @@ def _load_gt_index():
                         _add_exact(low_name, record)
                         _add_exact(stem_one, record)
                         _add_exact(no_ext, record)
-                        # Structured UID+IM prefix e.g. 1_im-0001
                         m_im = re.match(r"^(\d+_im-\d+)", no_ext)
                         if m_im:
                             _add_prefix(m_im.group(1), record)
@@ -817,7 +803,6 @@ def _load_gt_index():
                         p = Path(img_path)
                         _add_exact(p.stem, record)
                         _add_exact(p.name, record)
-                        # Study folder ID (e.g., s50414267)
                         if re.match(r"^s\d{6,}$", p.parent.name, flags=re.IGNORECASE):
                             _add_prefix(p.parent.name, record)
         except Exception as exc:
@@ -842,19 +827,17 @@ def lookup_ground_truth(uploaded_filename: str) -> dict | None:
     stem = fname.stem.lower().replace(" ", "_")
     no_dcm_stem = re.sub(r"\.(?:dcm\.)?(?:png|jpe?g|bmp|tiff?)$", "", low_name)
 
-    # 1. Exact filename / stem matches
     for key in (low_name, stem, no_dcm_stem):
         if key in exact_index:
             return exact_index[key]
 
-    # 2. Structured UID / UUID tokens embedded inside filenames (including UID-prefixed names)
     token_patterns = [
-        r"([0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8})",  # MIMIC UUID
-        r"(cxr\d+_im-\d+)",                                                # IU TimPhoi ID
-        r"(\d+_im-\d+-\d+)",                                               # IU Archive file prefix
-        r"(\d+_im-\d+)",                                                   # IU Archive study prefix
-        r"(s\d{7,})",                                                      # MIMIC study ID
-        r"(row_\d+)",                                                      # MIMIC row ID
+        r"([0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8})",
+        r"(cxr\d+_im-\d+)",
+        r"(\d+_im-\d+-\d+)",
+        r"(\d+_im-\d+)",
+        r"(s\d{7,})",
+        r"(row_\d+)",
     ]
     for pat in token_patterns:
         m = re.search(pat, no_dcm_stem, flags=re.IGNORECASE)
@@ -865,8 +848,6 @@ def lookup_ground_truth(uploaded_filename: str) -> dict | None:
             if tok in prefix_index:
                 return prefix_index[tok]
 
-    # 3. Check if any known structured prefix appears as a token boundary in stem
-    # (handles e.g. UID_custom_suffix.png without matching arbitrary single digits)
     for part in re.split(r"[/\\]", no_dcm_stem):
         if part in prefix_index:
             return prefix_index[part]
@@ -879,35 +860,35 @@ def main():
     st.markdown("""
 <div class="clinical-header">
   <h1>🫁 Hệ thống Sinh Báo cáo X-Quang Ngực Tự động (Pure Transformer)</h1>
-  <p>Kiến trúc bài báo gốc · ViT Encoder + Memory-Augmented Decoder · IEEE TMI 2022 · Tự động đối chiếu Ground Truth &amp; ViT Attention Heatmap</p>
+  <p>Kiến trúc bài báo gốc · ViT Encoder + Memory-Augmented Decoder · IEEE TMI 2022 · Đối chiếu trực tiếp Ảnh &amp; Báo cáo trên 1 màn hình</p>
 </div>
 """, unsafe_allow_html=True)
 
-    # 2-column comparison layout: Left = Reports comparison (1.15), Right = Upload + Images + Heatmap (0.85)
-    col_left, col_right = st.columns([1.15, 0.85], gap="large")
+    # 2-column side-by-side comparison: Left = Upload + Images & Heatmap (0.95), Right = Reports Comparison (1.05)
+    col_left, col_right = st.columns([0.95, 1.05], gap="medium")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # CỘT PHẢI: Tải ảnh, Ảnh gốc, Attention Heatmap + Giải thích, Ảnh nghiêng
+    # CỘT TRÁI: Tải ảnh & Hiển thị song song Ảnh gốc + Attention Heatmap
     # ══════════════════════════════════════════════════════════════════════════
-    with col_right:
-        st.markdown('<div class="section-card"><div class="section-title">📂 Tải lên Phim X-Quang</div>', unsafe_allow_html=True)
-        frontal_file = st.file_uploader(
-            "Phim X-quang Thẳng (Frontal - bắt buộc)",
-            type=["png", "jpg", "jpeg", "bmp", "tiff"],
-            key="frontal_upload",
-            help="Ảnh chụp X-quang lồng ngực tư thế thẳng (PA hoặc AP)",
-        )
-        st.markdown('<p class="upload-hint">Định dạng PNG/JPG/BMP, tư thế thẳng (PA/AP)</p>', unsafe_allow_html=True)
-
-        lateral_file = st.file_uploader(
-            "Phim X-quang Nghiêng (Lateral - tùy chọn)",
-            type=["png", "jpg", "jpeg", "bmp", "tiff"],
-            key="lateral_upload",
-            help="Ảnh chụp X-quang tư thế nghiêng bổ trợ (nếu có)",
-        )
-        st.markdown('<p class="upload-hint">Tùy chọn: cung cấp thêm góc nghiêng nếu có sẵn</p>', unsafe_allow_html=True)
-
+    with col_left:
+        st.markdown('<div class="section-card"><div class="section-title">📂 Tải phim &amp; Phân tích</div>', unsafe_allow_html=True)
         analyze_clicked = st.button("🔬 Phân tích & Sinh Báo cáo X-Quang", key="run_analysis")
+
+        up_col1, up_col2 = st.columns(2, gap="small")
+        with up_col1:
+            frontal_file = st.file_uploader(
+                "Phim X-quang Thẳng (Frontal - bắt buộc)",
+                type=["png", "jpg", "jpeg", "bmp", "tiff"],
+                key="frontal_upload",
+                help="Ảnh chụp X-quang lồng ngực tư thế thẳng (PA hoặc AP)",
+            )
+        with up_col2:
+            lateral_file = st.file_uploader(
+                "Phim X-quang Nghiêng (Lateral - tùy chọn)",
+                type=["png", "jpg", "jpeg", "bmp", "tiff"],
+                key="lateral_upload",
+                help="Ảnh chụp X-quang tư thế nghiêng bổ trợ (nếu có)",
+            )
         st.markdown("</div>", unsafe_allow_html=True)
 
         pil_frontal = None
@@ -920,7 +901,6 @@ def main():
             if lateral_file is not None:
                 pil_lateral = Image.open(lateral_file).convert("RGB")
 
-            # Reset cached diagnosis when the uploaded image pair changes
             cur_sig = (
                 frontal_file.name,
                 frontal_file.size,
@@ -933,14 +913,13 @@ def main():
         else:
             st.session_state.pop("uploaded_sig", None)
             st.session_state.pop("diagnosis", None)
-            st.info("Vui lòng tải lên **Phim X-quang Thẳng (Frontal)** ở trên để bắt đầu.")
 
-        # Run inference on button click BEFORE rendering results so both columns update immediately
+        # Run inference on button click BEFORE rendering both side-by-side images and right-column reports
         if analyze_clicked:
             if pil_frontal is None:
                 st.warning("⚠️ Cần tải lên Phim X-quang Thẳng (Frontal) trước khi phân tích.")
             else:
-                with st.spinner("⏳ Đang nạp mô hình Transformer và sinh báo cáo + Attention Heatmap..."):
+                with st.spinner("⏳ Đang chạy Pure Transformer và sinh Attention Heatmap..."):
                     all_entries = load_all_models()
                     for k, entry in all_entries.items():
                         if entry and entry.get("missing"):
@@ -956,8 +935,10 @@ def main():
                         if not entry or "error" in entry:
                             continue
                         try:
-                            report_en, probs_np = run_model_inference(entry, frontal_tensor, lateral_tensor)
-                            results[key] = (report_en, probs_np)
+                            report_en, probs_np, out_ids = run_model_inference(
+                                entry, frontal_tensor, lateral_tensor
+                            )
+                            results[key] = (report_en, probs_np, out_ids)
                         except Exception as ex:
                             st.warning(f"⚠️ Lỗi suy luận '{entry.get('label', key)}': {ex}")
 
@@ -969,17 +950,19 @@ def main():
                         clean_en = format_clinical_report(best_raw_report)
                         structured_en = split_clinical_report(clean_en)
 
-                        # Generate heatmap from the model that produced the selected report
-                        heatmap_image, attn_info = None, {}
+                        heatmap_image = None
                         hm_entry = all_entries.get(best_key)
+                        best_out_ids = results[best_key][2]
                         if hm_entry and "model" in hm_entry:
                             try:
-                                heatmap_image, attn_info = create_attention_overlay(
+                                heatmap_image = create_attention_overlay(
                                     pil_frontal,
                                     hm_entry["model"],
                                     hm_entry["device"],
                                     frontal_tensor,
                                     lateral_tensor,
+                                    token_ids=best_out_ids,
+                                    special_ids=(hm_entry["bos"], hm_entry["eos"], hm_entry["pad"]),
                                 )
                             except Exception as ex:
                                 st.warning(f"⚠️ Lỗi sinh Attention Heatmap: {ex}")
@@ -989,41 +972,47 @@ def main():
                             "clean_en": clean_en,
                             "structured_en": structured_en,
                             "heatmap_image": heatmap_image,
-                            "attn_info": attn_info,
                             "selected_model": all_entries[best_key]["label"],
-                            "contributing": [all_entries[k]["label"] for k in results],
                             "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
                             "uploaded_fname": uploaded_filename,
                         }
 
-        # 2. Original Frontal X-ray
-        if pil_frontal is not None:
-            st.markdown('<div class="section-title" style="margin-top:0.6rem;">🩻 Phim X-quang Thẳng (Frontal)</div>', unsafe_allow_html=True)
-            st.image(pil_frontal, caption=uploaded_filename, use_container_width=True)
+        # Side-by-side image row: Frontal (left) + Attention Heatmap (right)
+        img_col1, img_col2 = st.columns(2, gap="small")
+        with img_col1:
+            st.markdown('<div class="sub-label">🩻 Phim X-quang Thẳng (Frontal)</div>', unsafe_allow_html=True)
+            if pil_frontal is not None:
+                st.image(pil_frontal, caption=uploaded_filename, use_container_width=True)
+            else:
+                st.markdown('<div class="img-placeholder">Chưa có phim Frontal.<br>Vui lòng tải ảnh ở khung trên.</div>', unsafe_allow_html=True)
 
-        # 3. Attention Heatmap + ViT Attention Explanation
-        if pil_frontal is not None and "diagnosis" in st.session_state:
-            dx = st.session_state["diagnosis"]
+        with img_col2:
+            st.markdown('<div class="sub-label">🔥 Bản đồ nhiệt (Attention Heatmap)</div>', unsafe_allow_html=True)
+            dx = st.session_state.get("diagnosis", {})
             heatmap_image = dx.get("heatmap_image")
-            attn_info = dx.get("attn_info", {})
-            if heatmap_image is not None:
-                st.markdown('<div class="section-title" style="margin-top:0.8rem;">🔥 Bản đồ nhiệt vùng tập trung (Attention Heatmap)</div>', unsafe_allow_html=True)
+            if pil_frontal is not None and heatmap_image is not None:
                 st.image(
                     heatmap_image,
-                    caption="Màu đỏ/vàng rực rỡ = Vùng patch có trọng số Self-Attention cao nhất từ [CLS]",
+                    caption="Thang màu nhiệt: Đỏ/Cam = mức chú ý cao · Vàng nhạt = trung bình · Trong suốt = nền",
                     use_container_width=True,
                 )
-                st.markdown(render_heatmap_explanation(attn_info), unsafe_allow_html=True)
+            else:
+                msg = (
+                    "Nhấn nút phân tích ở trên để hiển thị Attention Heatmap."
+                    if pil_frontal is not None
+                    else "Bản đồ nhiệt vùng phổi – trung thất sẽ hiển thị tại đây."
+                )
+                st.markdown(f'<div class="img-placeholder">{msg}</div>', unsafe_allow_html=True)
 
-        # 4. Lateral X-ray (ONLY when user uploaded one)
+        # Lateral image collapsed neatly underneath if uploaded
         if pil_lateral is not None:
-            st.markdown('<div class="section-title" style="margin-top:0.8rem;">🩻 Phim X-quang Nghiêng (Lateral)</div>', unsafe_allow_html=True)
-            st.image(pil_lateral, caption=lateral_file.name, use_container_width=True)
+            with st.expander("🩻 Xem Phim X-quang Nghiêng (Lateral)", expanded=False):
+                st.image(pil_lateral, caption=lateral_file.name, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # CỘT TRÁI: Đối chiếu Báo cáo gốc của Bác sĩ vs. Báo cáo Mô hình AI
+    # CỘT PHẢI: Đối chiếu Báo cáo gốc của Bác sĩ vs. Báo cáo Mô hình AI
     # ══════════════════════════════════════════════════════════════════════════
-    with col_left:
+    with col_right:
         # Khung 1: Ground Truth Doctor Report
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.markdown('<div class="section-title">🩺 Khung 1 — Báo cáo gốc của Bác sĩ (Ground Truth)</div>', unsafe_allow_html=True)
@@ -1046,11 +1035,10 @@ def main():
         elif fname_to_lookup:
             st.info(
                 f"ℹ️ Ảnh **{fname_to_lookup}** không có trong tập dữ liệu gốc "
-                "(`MIMIC-CXR`, `IU X-Ray Archive`, `IU-Xray TimPhoi`). "
-                "Đây là ảnh ngoài tập dữ liệu nên không có báo cáo bác sĩ đối chiếu."
+                "(`MIMIC-CXR`, `IU X-Ray Archive`, `IU-Xray TimPhoi`)."
             )
         else:
-            st.info("ℹ️ Tải lên ảnh X-quang ở cột phải để tự động tra cứu báo cáo bác sĩ trong `data/ground_truth/`.")
+            st.info("ℹ️ Tải lên phim X-quang ở cột trái để tự động tra cứu báo cáo bác sĩ trong `data/ground_truth/`.")
         st.markdown("</div>", unsafe_allow_html=True)
 
         # Khung 2: Predicted Report by Transformer Model
@@ -1062,7 +1050,7 @@ def main():
             structured_en = dx.get("structured_en", split_clinical_report(dx["raw_report"]))
             selected_lbl = dx.get("selected_model", "")
             st.markdown(
-                f'<span class="dataset-badge">Mô hình chọn lọc: {selected_lbl}</span>',
+                f'<span class="dataset-badge">Mô hình: {selected_lbl}</span>',
                 unsafe_allow_html=True,
             )
 
@@ -1076,13 +1064,13 @@ def main():
                 st.text_area(
                     label="Raw Output",
                     value=dx["raw_report"],
-                    height=120,
+                    height=100,
                     disabled=True,
                     key="raw_report_display",
                     label_visibility="collapsed",
                 )
         else:
-            st.info("ℹ️ Nhấn nút **🔬 Phân tích & Sinh Báo cáo X-Quang** ở cột phải để xem kết quả sinh báo cáo.")
+            st.info("ℹ️ Nhấn **🔬 Phân tích & Sinh Báo cáo X-Quang** ở cột trái để sinh báo cáo đối chiếu.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 

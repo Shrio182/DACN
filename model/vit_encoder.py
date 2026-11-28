@@ -91,14 +91,60 @@ class ViTEncoder(nn.Module):
         x = self.norm(x)
         return x[:, 1:], x[:, 0]                                   # regional features, cls token
 
+    @staticmethod
+    def _suppress_border_attention(grid: torch.Tensor, border_scale: float = 0.15) -> torch.Tensor:
+        """Làm dịu 1 hàng/cột viền ngoài cùng (attention sink ở nền đen/mô mềm ngoài lồng ngực)."""
+        if grid.size(-1) < 3 or grid.size(-2) < 3:
+            return grid
+        attenuated = grid.clone()
+        interior_mean = attenuated[..., 1:-1, 1:-1].mean(dim=(-2, -1), keepdim=True).clamp_min(1e-8)
+        cap = 0.5 * interior_mean
+        mask = torch.ones_like(attenuated)
+        mask[..., 0, :] = border_scale
+        mask[..., -1, :] = border_scale
+        mask[..., :, 0] = border_scale
+        mask[..., :, -1] = border_scale
+        attenuated = attenuated * mask
+        # Cap outer ring so sharp border sinks cannot exceed lung interior scale
+        border_capped = torch.minimum(attenuated, cap)
+        is_border = mask < 1.0
+        attenuated = torch.where(is_border, border_capped, attenuated)
+        return attenuated / attenuated.sum(dim=(-2, -1), keepdim=True).clamp_min(1e-8)
+
+    @staticmethod
+    def _gaussian_blur_grid(grid: torch.Tensor) -> torch.Tensor:
+        """Làm mượt nhẹ bản đồ chú ý 2D bằng bộ lọc Gaussian 3x3 trước khi nội suy."""
+        b, v, h, w = grid.shape
+        kernel = torch.tensor(
+            [[1.0, 2.0, 1.0], [2.0, 4.0, 2.0], [1.0, 2.0, 1.0]],
+            device=grid.device,
+            dtype=grid.dtype,
+        ) / 16.0
+        kernel = kernel.view(1, 1, 3, 3)
+        flat = grid.reshape(b * v, 1, h, w)
+        padded = torch.nn.functional.pad(flat, (1, 1, 1, 1), mode="replicate")
+        smoothed = torch.nn.functional.conv2d(padded, kernel)
+        return smoothed.reshape(b, v, h, w)
+
+    @staticmethod
+    def _minmax_norm_grid(grid: torch.Tensor) -> torch.Tensor:
+        g_min = grid.amin(dim=(-2, -1), keepdim=True)
+        g_max = grid.amax(dim=(-2, -1), keepdim=True)
+        return (grid - g_min) / (g_max - g_min + 1e-8)
+
     @torch.no_grad()
     def get_attention_heatmap(
         self,
         images: torch.Tensor,
         img_size: int = 448,
+        cross_attention: torch.Tensor = None,
         return_patch_grid: bool = False,
     ):
-        """Trích trọng số Self-Attention từ [CLS] tới lưới patch ở tầng Encoder cuối (B,V,H,W)."""
+        """
+        Trích trọng số Self-Attention từ [CLS] tới lưới patch ở tầng Encoder cuối (B,V,H,W),
+        triệt tiêu attention sink ở viền ngoài cùng, ưu tiên kết hợp Decoder Cross-Attention nếu có,
+        và làm mượt Gaussian nhẹ trước khi nội suy.
+        """
         if images.dim() == 4:
             images = images.unsqueeze(1)
         if images.dim() != 5:
@@ -126,17 +172,31 @@ class ViTEncoder(nn.Module):
             side = int(cls_attention.size(-1) ** 0.5)
             if side * side != cls_attention.size(-1):
                 raise RuntimeError("Patch count cannot form a square attention grid")
-            heatmaps.append(cls_attention.reshape(batch_size, 1, side, side))
+            grid = cls_attention.reshape(batch_size, 1, side, side)
+            grid = self._suppress_border_attention(grid)
+            heatmaps.append(grid)
 
         patch_grid = torch.cat(heatmaps, dim=1)  # (B, V, side, side)
+
+        if cross_attention is not None:
+            cross = cross_attention.to(device=patch_grid.device, dtype=patch_grid.dtype)
+            if cross.dim() == 3:
+                cross = cross.unsqueeze(1)
+            if cross.size(1) == 1 and view_count > 1:
+                cross = cross.expand(-1, view_count, -1, -1)
+            cross = self._suppress_border_attention(cross)
+            patch_grid = 0.65 * self._minmax_norm_grid(cross) + 0.35 * self._minmax_norm_grid(patch_grid)
+            patch_grid = patch_grid / patch_grid.sum(dim=(-2, -1), keepdim=True).clamp_min(1e-8)
+
+        smoothed_grid = self._gaussian_blur_grid(patch_grid)
         upsampled = torch.nn.functional.interpolate(
-            patch_grid,
+            smoothed_grid,
             size=(img_size, img_size),
             mode="bilinear",
             align_corners=False,
         )
         if return_patch_grid:
-            return upsampled, patch_grid
+            return upsampled, smoothed_grid
         return upsampled
 
     def forward(self, images: torch.Tensor):
