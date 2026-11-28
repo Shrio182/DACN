@@ -34,6 +34,10 @@ data/archive/images/
 /archive/
 iu_xray_data/
 chest xray data/
+
+# Cho phép đẩy nhãn ground truth lên Git (văn bản, không phải ảnh)
+!data/ground_truth/
+!data/ground_truth/**
 *.tgz
 *.tar
 *.zip
