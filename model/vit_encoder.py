@@ -96,8 +96,9 @@ class ViTEncoder(nn.Module):
         self,
         images: torch.Tensor,
         img_size: int = 448,
-    ) -> torch.Tensor:
-        """Trích attention CLS→patch của tầng Encoder cuối (B,V,H,W)."""
+        return_patch_grid: bool = False,
+    ):
+        """Trích trọng số Self-Attention từ [CLS] tới lưới patch ở tầng Encoder cuối (B,V,H,W)."""
         if images.dim() == 4:
             images = images.unsqueeze(1)
         if images.dim() != 5:
@@ -127,13 +128,16 @@ class ViTEncoder(nn.Module):
                 raise RuntimeError("Patch count cannot form a square attention grid")
             heatmaps.append(cls_attention.reshape(batch_size, 1, side, side))
 
-        combined = torch.cat(heatmaps, dim=1)
-        return torch.nn.functional.interpolate(
-            combined,
+        patch_grid = torch.cat(heatmaps, dim=1)  # (B, V, side, side)
+        upsampled = torch.nn.functional.interpolate(
+            patch_grid,
             size=(img_size, img_size),
             mode="bilinear",
             align_corners=False,
         )
+        if return_patch_grid:
+            return upsampled, patch_grid
+        return upsampled
 
     def forward(self, images: torch.Tensor):
         # Đầu vào:
