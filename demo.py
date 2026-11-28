@@ -116,7 +116,7 @@ st.set_page_config(
 st.markdown("""
 <style>
 section[data-testid="stSidebar"], button[data-testid="collapsedControl"] { display: none !important; }
-header[data-testid="stHeader"] { height: 0.4rem !important; min-height: 0.4rem !important; background: #FFFFFF !important; }
+header[data-testid="stHeader"] { height: 0.25rem !important; min-height: 0.25rem !important; background: #FFFFFF !important; }
 .stApp, section[data-testid="stAppViewContainer"], div[data-testid="stMain"] {
     background: #FFFFFF !important;
     color: #0F172A !important;
@@ -138,7 +138,7 @@ div[data-testid="stFileUploaderDropzone"] {
     background: #FFFFFF !important;
     border: 1px dashed #94A3B8 !important;
     border-radius: 8px !important;
-    padding: 0.45rem 0.65rem !important;
+    padding: 0.35rem 0.55rem !important;
     color: #0F172A !important;
 }
 div[data-testid="stFileUploader"] section *,
@@ -151,8 +151,8 @@ div[data-testid="stFileUploaderFile"] {
     background: #F1F5F9 !important;
     border: 1px solid #CBD5E1 !important;
     border-radius: 6px !important;
-    padding: 0.25rem 0.5rem !important;
-    margin-top: 0.35rem !important;
+    padding: 0.2rem 0.45rem !important;
+    margin-top: 0.25rem !important;
 }
 div[data-testid="stFileUploader"] svg,
 div[data-testid="stFileUploaderDropzone"] svg,
@@ -192,49 +192,37 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     background: #F8FAFC !important;
     border: 1px solid #CBD5E1 !important;
     border-radius: 9px !important;
-    padding: 0.65rem 0.9rem !important;
+    padding: 0.55rem 0.8rem !important;
 }
 .main .block-container {
-    padding: 0.65rem 1.5rem 0.9rem 1.5rem !important;
-    max-width: 1440px;
+    padding: 0.35rem 1.25rem 0.65rem 1.25rem !important;
+    max-width: 1460px;
     margin: auto;
 }
-.clinical-header {
-    background: #FFFFFF;
-    color: #0F172A !important;
-    padding: 0.65rem 1.2rem;
-    border-radius: 10px;
-    border: 1px solid #CBD5E1;
-    border-top: 4px solid #0F172A;
-    margin-bottom: 0.75rem;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
-}
-.clinical-header h1 { color: #0F172A !important; margin: 0; font-size: 1.28rem; font-weight: 700; }
-.clinical-header p { color: #475569 !important; margin: 0.15rem 0 0 0; font-size: 0.8rem; }
 .section-title {
-    font-size: 0.86rem;
+    font-size: 0.85rem;
     font-weight: 700;
     color: #0F172A;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     border-bottom: 2px solid #0F172A;
-    padding-bottom: 0.3rem;
-    margin-bottom: 0.55rem;
+    padding-bottom: 0.28rem;
+    margin-bottom: 0.48rem;
 }
 .sub-label {
-    font-size: 0.8rem;
+    font-size: 0.79rem;
     font-weight: 700;
     color: #334155;
-    margin: 0.35rem 0 0.2rem 0;
+    margin: 0.3rem 0 0.18rem 0;
     letter-spacing: 0.03em;
 }
 .report-box {
     background: #FFFFFF;
     border-left: 4px solid #1E3A5F;
     border-radius: 6px;
-    padding: 0.65rem 0.9rem;
-    font-size: 0.9rem;
-    line-height: 1.55;
+    padding: 0.6rem 0.85rem;
+    font-size: 0.89rem;
+    line-height: 1.52;
     color: #0F172A;
     white-space: pre-wrap;
     border-top: 1px solid #E2E8F0;
@@ -245,9 +233,9 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     background: #F0FDF4;
     border-left: 4px solid #16A34A;
     border-radius: 6px;
-    padding: 0.65rem 0.9rem;
-    font-size: 0.9rem;
-    line-height: 1.55;
+    padding: 0.6rem 0.85rem;
+    font-size: 0.89rem;
+    line-height: 1.52;
     color: #0F172A;
     white-space: pre-wrap;
     border-top: 1px solid #BBF7D0;
@@ -255,7 +243,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     border-bottom: 1px solid #BBF7D0;
 }
 .img-placeholder {
-    height: 340px;
+    height: 250px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -264,8 +252,8 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     border: 1px dashed #94A3B8;
     border-radius: 8px;
     color: #475569;
-    font-size: 0.86rem;
-    padding: 1rem;
+    font-size: 0.84rem;
+    padding: 0.85rem;
 }
 .dataset-badge {
     display: inline-block;
@@ -289,33 +277,42 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     font-weight: 600;
     margin: 0 4px 4px 0;
 }
-/* Compact image height (320px-360px) so images & reports fit simultaneously in 1 viewport */
+/* Compact vertical image height so stacked Frontal + Lateral and Heatmap fit cleanly on 1 viewport */
 div[data-testid="stImage"] img {
-    height: 340px !important;
-    max-height: 350px !important;
+    height: 255px !important;
+    max-height: 265px !important;
     width: 100% !important;
     object-fit: contain !important;
     background: #0F172A !important;
     border-radius: 8px !important;
 }
-/* Primary action button only (do NOT override Browse/Delete buttons inside FileUploader) */
-div.stButton > button {
-    background: #0F172A !important;
+/* Highest CSS specificity on Analyze button so stMarkdownContainer p never turns button text black */
+.stApp div[data-testid="stButton"] button,
+.stApp div[data-testid="stButton"] > button {
+    background-color: #1D4ED8 !important;
+    background: #1D4ED8 !important;
     color: #FFFFFF !important;
     border: none !important;
     border-radius: 8px !important;
     padding: 0.48rem 1.2rem !important;
-    font-weight: 600 !important;
-    width: 100%;
-    margin-bottom: 0.45rem !important;
+    font-weight: 700 !important;
+    width: 100% !important;
+    margin-bottom: 0.4rem !important;
 }
-div.stButton > button p,
-div.stButton > button span {
+.stApp div[data-testid="stButton"] button *,
+.stApp div[data-testid="stButton"] button p,
+.stApp div[data-testid="stButton"] button span,
+.stApp div[data-testid="stButton"] button [data-testid="stMarkdownContainer"],
+.stApp div[data-testid="stButton"] button [data-testid="stMarkdownContainer"] p {
     color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
     opacity: 1 !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
 }
-div.stButton > button:hover { background: #1E3A5F !important; }
+.stApp div[data-testid="stButton"] button:hover {
+    background-color: #1E40AF !important;
+    background: #1E40AF !important;
+}
 div[data-testid="stTextArea"] textarea:disabled {
     background: #F8FAFC !important;
     color: #0F172A !important;
@@ -933,23 +930,20 @@ def lookup_ground_truth(uploaded_filename: str) -> dict | None:
 
 # ─── MAIN APP ────────────────────────────────────────────────────────────────────
 def main():
-    st.markdown("""
-<div class="clinical-header">
-  <h1>🫁 Hệ thống Sinh Báo cáo X-Quang Ngực Tự động (Pure Transformer)</h1>
-  <p>Kiến trúc bài báo gốc · ViT Encoder + Memory-Augmented Decoder · IEEE TMI 2022 · Đối chiếu trực tiếp Ảnh &amp; Báo cáo trên 1 màn hình</p>
-</div>
-""", unsafe_allow_html=True)
-
-    # 2-column side-by-side comparison: Left = Upload + Images & Heatmap (0.95), Right = Reports Comparison (1.05)
+    # 2-column side-by-side comparison: Left = Upload + Vertical Views & Heatmap (0.95), Right = Reports Comparison (1.05)
     col_left, col_right = st.columns([0.95, 1.05], gap="medium")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # CỘT TRÁI: Tải ảnh & Hiển thị song song Ảnh gốc + Attention Heatmap
+    # CỘT TRÁI: Tải ảnh, 2 mặt ảnh xếp dọc & Attention Heatmap sau phân tích
     # ══════════════════════════════════════════════════════════════════════════
     with col_left:
         with st.container(border=True):
             st.markdown('<div class="section-title">📂 Tải phim &amp; Phân tích</div>', unsafe_allow_html=True)
-            analyze_clicked = st.button("🔬 Phân tích & Sinh Báo cáo X-Quang", key="run_analysis")
+            analyze_clicked = st.button(
+                "🔬 Phân tích & Sinh Báo cáo X-Quang",
+                key="run_analysis",
+                type="primary",
+            )
 
             up_col1, up_col2 = st.columns(2, gap="small")
             with up_col1:
@@ -990,7 +984,7 @@ def main():
             st.session_state.pop("uploaded_sig", None)
             st.session_state.pop("diagnosis", None)
 
-        # Run inference on button click BEFORE rendering both side-by-side images and right-column reports
+        # Run inference on button click BEFORE rendering visuals and right-column reports
         if analyze_clicked:
             if pil_frontal is None:
                 st.warning("⚠️ Cần tải lên Phim X-quang Thẳng (Frontal) trước khi phân tích.")
@@ -1053,37 +1047,37 @@ def main():
                             "uploaded_fname": uploaded_filename,
                         }
 
-        # Side-by-side image row: Frontal (left) + Attention Heatmap (right)
-        img_col1, img_col2 = st.columns(2, gap="small")
-        with img_col1:
-            st.markdown('<div class="sub-label">🩻 Phim X-quang Thẳng (Frontal)</div>', unsafe_allow_html=True)
-            if pil_frontal is not None:
-                st.image(pil_frontal, caption=uploaded_filename, use_container_width=True)
-            else:
-                st.markdown('<div class="img-placeholder">Chưa có phim Frontal.<br>Vui lòng tải ảnh ở khung trên.</div>', unsafe_allow_html=True)
+        # Display 2 uploaded radiograph views stacked vertically; show Attention Heatmap beside them after Analyze
+        dx = st.session_state.get("diagnosis", {})
+        heatmap_image = dx.get("heatmap_image")
 
-        with img_col2:
-            st.markdown('<div class="sub-label">🔥 Bản đồ nhiệt (Attention Heatmap)</div>', unsafe_allow_html=True)
-            dx = st.session_state.get("diagnosis", {})
-            heatmap_image = dx.get("heatmap_image")
-            if pil_frontal is not None and heatmap_image is not None:
+        if pil_frontal is not None and heatmap_image is not None:
+            v_col, hm_col = st.columns(2, gap="small")
+            with v_col:
+                st.markdown('<div class="sub-label">🩻 Phim X-quang Thẳng (Frontal)</div>', unsafe_allow_html=True)
+                st.image(pil_frontal, caption=uploaded_filename, use_container_width=True)
+                if pil_lateral is not None:
+                    st.markdown('<div class="sub-label">🩻 Phim X-quang Nghiêng (Lateral)</div>', unsafe_allow_html=True)
+                    st.image(pil_lateral, caption=lateral_file.name, use_container_width=True)
+            with hm_col:
+                st.markdown('<div class="sub-label">🔥 Bản đồ nhiệt (Attention Heatmap)</div>', unsafe_allow_html=True)
                 st.image(
                     heatmap_image,
                     caption="Thang màu nhiệt: Đỏ/Cam = mức chú ý cao · Vàng nhạt = trung bình · Trong suốt = nền",
                     use_container_width=True,
                 )
-            else:
-                msg = (
-                    "Nhấn nút phân tích ở trên để hiển thị Attention Heatmap."
-                    if pil_frontal is not None
-                    else "Bản đồ nhiệt vùng phổi – trung thất sẽ hiển thị tại đây."
-                )
-                st.markdown(f'<div class="img-placeholder">{msg}</div>', unsafe_allow_html=True)
-
-        # Lateral image collapsed neatly underneath if uploaded
-        if pil_lateral is not None:
-            with st.expander("🩻 Xem Phim X-quang Nghiêng (Lateral)", expanded=False):
+        elif pil_frontal is not None:
+            st.markdown('<div class="sub-label">🩻 Phim X-quang Thẳng (Frontal)</div>', unsafe_allow_html=True)
+            st.image(pil_frontal, caption=uploaded_filename, use_container_width=True)
+            if pil_lateral is not None:
+                st.markdown('<div class="sub-label">🩻 Phim X-quang Nghiêng (Lateral)</div>', unsafe_allow_html=True)
                 st.image(pil_lateral, caption=lateral_file.name, use_container_width=True)
+            st.info("ℹ️ Nhấn **🔬 Phân tích & Sinh Báo cáo X-Quang** ở trên để tạo Attention Heatmap và báo cáo AI.")
+        else:
+            st.markdown(
+                '<div class="img-placeholder">Chưa có phim X-quang.<br>Hãy tải lên phim Thẳng (Frontal) và tùy chọn phim Nghiêng (Lateral) ở trên.</div>',
+                unsafe_allow_html=True,
+            )
 
     # ══════════════════════════════════════════════════════════════════════════
     # CỘT PHẢI: Đối chiếu Báo cáo gốc của Bác sĩ vs. Báo cáo Mô hình AI
