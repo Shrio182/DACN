@@ -77,11 +77,11 @@ _MESH_TO_CORE_MAP = {
 _PATHOLOGY_KEYWORDS = {
     0: ["mediastinum", "aorta", "mediastinal", "cardiomediastinal"],
     1: ["cardiomegaly", "enlarged heart", "heart size", "cardiac silhouette"],
-    2: ["opacity", "opacities", "airspace", "infiltrate"],
+    2: ["opacity", "opacities", "airspace", "infiltrate", "emphysema", "hyperexpansion", "hyperinflation", "chronic obstructive"],
     3: ["nodule", "granuloma", "mass", "lesion"],
     4: ["edema", "congestion", "pulmonary edema"],
     5: ["consolidation", "consolidated"],
-    6: ["pneumonia", "infiltrate"],
+    6: ["pneumonia", "infiltrate", "infectious"],
     7: ["atelectasis", "atelectatic", "collapse"],
     8: ["pneumothorax"],
     9: ["effusion", "pleural effusion", "fluid"],
@@ -126,9 +126,74 @@ header[data-testid="stHeader"] { height: 0.4rem !important; min-height: 0.4rem !
 .stApp [data-testid="stMarkdownContainer"],
 .stApp [data-testid="stMarkdownContainer"] p,
 .stApp [data-testid="stExpander"] summary,
-.stApp [data-testid="stExpander"] summary *,
-.stApp [data-testid="stFileUploader"] *,
-.stApp [data-testid="stAlert"] * { color: #0F172A !important; }
+.stApp [data-testid="stExpander"] summary * {
+    color: #0F172A !important;
+}
+/* Force light theme contrast inside FileUploader so text/buttons never clash with dark browser defaults */
+div[data-testid="stFileUploader"] {
+    background: transparent !important;
+}
+div[data-testid="stFileUploader"] section,
+div[data-testid="stFileUploaderDropzone"] {
+    background: #FFFFFF !important;
+    border: 1px dashed #94A3B8 !important;
+    border-radius: 8px !important;
+    padding: 0.45rem 0.65rem !important;
+    color: #0F172A !important;
+}
+div[data-testid="stFileUploader"] section *,
+div[data-testid="stFileUploaderDropzone"] *,
+div[data-testid="stFileUploaderFile"],
+div[data-testid="stFileUploaderFile"] * {
+    color: #0F172A !important;
+}
+div[data-testid="stFileUploaderFile"] {
+    background: #F1F5F9 !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 6px !important;
+    padding: 0.25rem 0.5rem !important;
+    margin-top: 0.35rem !important;
+}
+div[data-testid="stFileUploader"] svg,
+div[data-testid="stFileUploaderDropzone"] svg,
+div[data-testid="stFileUploaderFile"] svg {
+    fill: #334155 !important;
+    color: #334155 !important;
+}
+div[data-testid="stFileUploader"] button,
+div[data-testid="stFileUploaderDropzone"] button {
+    background: #E2E8F0 !important;
+    color: #0F172A !important;
+    border: 1px solid #94A3B8 !important;
+    border-radius: 6px !important;
+}
+div[data-testid="stFileUploaderFile"] button {
+    background: transparent !important;
+    border: none !important;
+    color: #475569 !important;
+}
+/* Expander & Alert light surfaces */
+div[data-testid="stExpander"] details,
+div[data-testid="stExpander"] summary {
+    background: #FFFFFF !important;
+    border-color: #CBD5E1 !important;
+    color: #0F172A !important;
+}
+div[data-testid="stAlert"] {
+    background: #EFF6FF !important;
+    border: 1px solid #BFDBFE !important;
+    color: #0F172A !important;
+}
+div[data-testid="stAlert"] * {
+    color: #0F172A !important;
+}
+/* Native bordered containers styled cleanly without orphan divs */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: #F8FAFC !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 9px !important;
+    padding: 0.65rem 0.9rem !important;
+}
 .main .block-container {
     padding: 0.65rem 1.5rem 0.9rem 1.5rem !important;
     max-width: 1440px;
@@ -146,13 +211,6 @@ header[data-testid="stHeader"] { height: 0.4rem !important; min-height: 0.4rem !
 }
 .clinical-header h1 { color: #0F172A !important; margin: 0; font-size: 1.28rem; font-weight: 700; }
 .clinical-header p { color: #475569 !important; margin: 0.15rem 0 0 0; font-size: 0.8rem; }
-.section-card {
-    background: #F8FAFC;
-    border: 1px solid #CBD5E1;
-    border-radius: 9px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 0.75rem;
-}
 .section-title {
     font-size: 0.86rem;
     font-weight: 700;
@@ -167,7 +225,7 @@ header[data-testid="stHeader"] { height: 0.4rem !important; min-height: 0.4rem !
     font-size: 0.8rem;
     font-weight: 700;
     color: #334155;
-    margin: 0.4rem 0 0.2rem 0;
+    margin: 0.35rem 0 0.2rem 0;
     letter-spacing: 0.03em;
 }
 .report-box {
@@ -240,11 +298,10 @@ div[data-testid="stImage"] img {
     background: #0F172A !important;
     border-radius: 8px !important;
 }
-div[data-testid="stFileUploader"] section {
-    padding: 0.45rem 0.65rem !important;
-}
-div[data-testid="stButton"] > button {
+/* Primary action button only (do NOT override Browse/Delete buttons inside FileUploader) */
+div.stButton > button {
     background: #0F172A !important;
+    color: #FFFFFF !important;
     border: none !important;
     border-radius: 8px !important;
     padding: 0.48rem 1.2rem !important;
@@ -252,13 +309,13 @@ div[data-testid="stButton"] > button {
     width: 100%;
     margin-bottom: 0.45rem !important;
 }
-div.stButton > button, div.stButton > button p, div.stButton > button span,
-[data-testid="stBaseButton-secondary"] *, [data-testid="stBaseButton-primary"] * {
+div.stButton > button p,
+div.stButton > button span {
     color: #FFFFFF !important;
     opacity: 1 !important;
     font-weight: 600 !important;
 }
-div[data-testid="stButton"] > button:hover { background: #1E3A5F !important; }
+div.stButton > button:hover { background: #1E3A5F !important; }
 div[data-testid="stTextArea"] textarea:disabled {
     background: #F8FAFC !important;
     color: #0F172A !important;
@@ -419,7 +476,9 @@ def _map_archive_to_core(probs_65: np.ndarray) -> np.ndarray:
 
 
 def _compute_mlc_consensus(results: dict, all_entries: dict) -> np.ndarray:
+    """Combine MLC probabilities across models using max-aware consensus so strong detections are preserved."""
     total_weight, weighted_sum = 0.0, np.zeros(14, dtype=np.float32)
+    max_probs = np.zeros(14, dtype=np.float32)
     for key, (_, probs_np, _) in results.items():
         w = all_entries[key]["weight"]
         probs14 = (
@@ -428,8 +487,21 @@ def _compute_mlc_consensus(results: dict, all_entries: dict) -> np.ndarray:
             else probs_np[:14].astype(np.float32)
         )
         weighted_sum += w * probs14
+        max_probs = np.maximum(max_probs, probs14)
         total_weight += w
-    return weighted_sum / max(total_weight, 1e-8)
+    mean_probs = weighted_sum / max(total_weight, 1e-8)
+    # Blend weighted mean with peak detector confidence (prevents normal-biased models from masking strong findings)
+    return 0.55 * mean_probs + 0.45 * max_probs
+
+
+def _has_affirmative_keyword(text_low: str, keywords: list[str]) -> bool:
+    """Return True if any pathology keyword appears outside an immediate negation phrase."""
+    for kw in keywords:
+        for m in re.finditer(rf"\b{re.escape(kw)}\b", text_low):
+            prefix = text_low[max(0, m.start() - 35) : m.start()]
+            if not re.search(r"\b(?:no|without|nor|free of|negative for|absence of)\b[^.]*$", prefix):
+                return True
+    return False
 
 
 def _score_report_candidate(raw_en: str, clean_en: str, mlc_probs: np.ndarray, model_weight: float) -> float:
@@ -437,15 +509,19 @@ def _score_report_candidate(raw_en: str, clean_en: str, mlc_probs: np.ndarray, m
     if len(words) < 5:
         return -999.0
     lexical_diversity = len(set(words)) / max(len(words), 1)
-    length_bonus = 2.0 if 12 <= len(words) <= 45 else (-1.5 if len(words) > 50 else 0.5)
+    length_bonus = 2.0 if 12 <= len(words) <= 65 else (-0.5 if len(words) > 65 else 0.5)
     keyword_bonus = 0.0
     clean_low = clean_en.lower()
+    has_strong_abnormality = False
     if mlc_probs is not None:
+        has_strong_abnormality = bool(np.max(mlc_probs[:14]) >= 0.40)
         for idx in range(min(14, len(mlc_probs))):
-            if mlc_probs[idx] >= 0.35 and any(kw in clean_low for kw in _PATHOLOGY_KEYWORDS.get(idx, [])):
-                keyword_bonus += 1.0
+            if mlc_probs[idx] >= 0.35 and _has_affirmative_keyword(clean_low, _PATHOLOGY_KEYWORDS.get(idx, [])):
+                keyword_bonus += 1.5
+    if has_strong_abnormality and "lungs are clear" in clean_low and keyword_bonus == 0.0:
+        keyword_bonus -= 1.5
     xxxx_penalty = -1.2 if "xxxx" in raw_en.lower() else 0.0
-    return (lexical_diversity * 3.0) + length_bonus + keyword_bonus + (model_weight * 3.0) + xxxx_penalty
+    return (lexical_diversity * 3.0) + length_bonus + keyword_bonus + model_weight + xxxx_penalty
 
 
 def select_best_report(results: dict, all_entries: dict, mlc_probs: np.ndarray) -> tuple[str, str]:
@@ -871,25 +947,25 @@ def main():
     # CỘT TRÁI: Tải ảnh & Hiển thị song song Ảnh gốc + Attention Heatmap
     # ══════════════════════════════════════════════════════════════════════════
     with col_left:
-        st.markdown('<div class="section-card"><div class="section-title">📂 Tải phim &amp; Phân tích</div>', unsafe_allow_html=True)
-        analyze_clicked = st.button("🔬 Phân tích & Sinh Báo cáo X-Quang", key="run_analysis")
+        with st.container(border=True):
+            st.markdown('<div class="section-title">📂 Tải phim &amp; Phân tích</div>', unsafe_allow_html=True)
+            analyze_clicked = st.button("🔬 Phân tích & Sinh Báo cáo X-Quang", key="run_analysis")
 
-        up_col1, up_col2 = st.columns(2, gap="small")
-        with up_col1:
-            frontal_file = st.file_uploader(
-                "Phim X-quang Thẳng (Frontal - bắt buộc)",
-                type=["png", "jpg", "jpeg", "bmp", "tiff"],
-                key="frontal_upload",
-                help="Ảnh chụp X-quang lồng ngực tư thế thẳng (PA hoặc AP)",
-            )
-        with up_col2:
-            lateral_file = st.file_uploader(
-                "Phim X-quang Nghiêng (Lateral - tùy chọn)",
-                type=["png", "jpg", "jpeg", "bmp", "tiff"],
-                key="lateral_upload",
-                help="Ảnh chụp X-quang tư thế nghiêng bổ trợ (nếu có)",
-            )
-        st.markdown("</div>", unsafe_allow_html=True)
+            up_col1, up_col2 = st.columns(2, gap="small")
+            with up_col1:
+                frontal_file = st.file_uploader(
+                    "Phim X-quang Thẳng (Frontal - bắt buộc)",
+                    type=["png", "jpg", "jpeg", "bmp", "tiff"],
+                    key="frontal_upload",
+                    help="Ảnh chụp X-quang lồng ngực tư thế thẳng (PA hoặc AP)",
+                )
+            with up_col2:
+                lateral_file = st.file_uploader(
+                    "Phim X-quang Nghiêng (Lateral - tùy chọn)",
+                    type=["png", "jpg", "jpeg", "bmp", "tiff"],
+                    key="lateral_upload",
+                    help="Ảnh chụp X-quang tư thế nghiêng bổ trợ (nếu có)",
+                )
 
         pil_frontal = None
         pil_lateral = None
@@ -1014,64 +1090,62 @@ def main():
     # ══════════════════════════════════════════════════════════════════════════
     with col_right:
         # Khung 1: Ground Truth Doctor Report
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-title">🩺 Khung 1 — Báo cáo gốc của Bác sĩ (Ground Truth)</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="section-title">🩺 Khung 1 — Báo cáo gốc của Bác sĩ (Ground Truth)</div>', unsafe_allow_html=True)
 
-        fname_to_lookup = uploaded_filename or st.session_state.get("diagnosis", {}).get("uploaded_fname", "")
-        gt_record = lookup_ground_truth(fname_to_lookup) if fname_to_lookup else None
+            fname_to_lookup = uploaded_filename or st.session_state.get("diagnosis", {}).get("uploaded_fname", "")
+            gt_record = lookup_ground_truth(fname_to_lookup) if fname_to_lookup else None
 
-        if gt_record is not None:
-            ds_name = gt_record["dataset"]
-            split_name = gt_record["split"].upper()
-            st.markdown(
-                f'<span class="dataset-badge">Bộ dữ liệu: {ds_name}</span>'
-                f'<span class="split-badge">Tập: {split_name}</span>',
-                unsafe_allow_html=True,
-            )
-            st.markdown('<div class="sub-label">FINDINGS (Bác sĩ):</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="gt-box">{gt_record["findings"]}</div>', unsafe_allow_html=True)
-            st.markdown('<div class="sub-label">IMPRESSION (Bác sĩ):</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="gt-box">{gt_record["impression"]}</div>', unsafe_allow_html=True)
-        elif fname_to_lookup:
-            st.info(
-                f"ℹ️ Ảnh **{fname_to_lookup}** không có trong tập dữ liệu gốc "
-                "(`MIMIC-CXR`, `IU X-Ray Archive`, `IU-Xray TimPhoi`)."
-            )
-        else:
-            st.info("ℹ️ Tải lên phim X-quang ở cột trái để tự động tra cứu báo cáo bác sĩ trong `data/ground_truth/`.")
-        st.markdown("</div>", unsafe_allow_html=True)
+            if gt_record is not None:
+                ds_name = gt_record["dataset"]
+                split_name = gt_record["split"].upper()
+                st.markdown(
+                    f'<span class="dataset-badge">Bộ dữ liệu: {ds_name}</span>'
+                    f'<span class="split-badge">Tập: {split_name}</span>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown('<div class="sub-label">FINDINGS (Bác sĩ):</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="gt-box">{gt_record["findings"]}</div>', unsafe_allow_html=True)
+                st.markdown('<div class="sub-label">IMPRESSION (Bác sĩ):</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="gt-box">{gt_record["impression"]}</div>', unsafe_allow_html=True)
+            elif fname_to_lookup:
+                st.info(
+                    f"ℹ️ Ảnh **{fname_to_lookup}** không có trong tập dữ liệu gốc "
+                    "(`MIMIC-CXR`, `IU X-Ray Archive`, `IU-Xray TimPhoi`)."
+                )
+            else:
+                st.info("ℹ️ Tải lên phim X-quang ở cột trái để tự động tra cứu báo cáo bác sĩ trong `data/ground_truth/`.")
 
         # Khung 2: Predicted Report by Transformer Model
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-title">🤖 Khung 2 — Báo cáo do Mô hình AI sinh ra (Predicted Report)</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="section-title">🤖 Khung 2 — Báo cáo do Mô hình AI sinh ra (Predicted Report)</div>', unsafe_allow_html=True)
 
-        if "diagnosis" in st.session_state:
-            dx = st.session_state["diagnosis"]
-            structured_en = dx.get("structured_en", split_clinical_report(dx["raw_report"]))
-            selected_lbl = dx.get("selected_model", "")
-            st.markdown(
-                f'<span class="dataset-badge">Mô hình: {selected_lbl}</span>',
-                unsafe_allow_html=True,
-            )
-
-            st.markdown('<div class="sub-label">FINDINGS (Mô hình AI):</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="report-box">{structured_en["findings"]}</div>', unsafe_allow_html=True)
-
-            st.markdown('<div class="sub-label">IMPRESSION (Mô hình AI):</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="report-box">{structured_en["impression"]}</div>', unsafe_allow_html=True)
-
-            with st.expander("📄 Raw Output nguyên bản", expanded=False):
-                st.text_area(
-                    label="Raw Output",
-                    value=dx["raw_report"],
-                    height=100,
-                    disabled=True,
-                    key="raw_report_display",
-                    label_visibility="collapsed",
+            if "diagnosis" in st.session_state:
+                dx = st.session_state["diagnosis"]
+                structured_en = dx.get("structured_en", split_clinical_report(dx["raw_report"]))
+                selected_lbl = dx.get("selected_model", "")
+                st.markdown(
+                    f'<span class="dataset-badge">Mô hình: {selected_lbl}</span>',
+                    unsafe_allow_html=True,
                 )
-        else:
-            st.info("ℹ️ Nhấn **🔬 Phân tích & Sinh Báo cáo X-Quang** ở cột trái để sinh báo cáo đối chiếu.")
-        st.markdown("</div>", unsafe_allow_html=True)
+
+                st.markdown('<div class="sub-label">FINDINGS (Mô hình AI):</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="report-box">{structured_en["findings"]}</div>', unsafe_allow_html=True)
+
+                st.markdown('<div class="sub-label">IMPRESSION (Mô hình AI):</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="report-box">{structured_en["impression"]}</div>', unsafe_allow_html=True)
+
+                with st.expander("📄 Raw Output nguyên bản", expanded=False):
+                    st.text_area(
+                        label="Raw Output",
+                        value=dx["raw_report"],
+                        height=100,
+                        disabled=True,
+                        key="raw_report_display",
+                        label_visibility="collapsed",
+                    )
+            else:
+                st.info("ℹ️ Nhấn **🔬 Phân tích & Sinh Báo cáo X-Quang** ở cột trái để sinh báo cáo đối chiếu.")
 
 
 if __name__ == "__main__":

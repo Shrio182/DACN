@@ -11,7 +11,14 @@ def format_clinical_report(raw_text: str) -> str:
         return ""
 
     text = raw_text.replace("xxxx", " ").replace("XXXX", " ")
+    text = re.sub(r"_{2,}", " ", text)
     text = re.sub(r"<(?:bos|eos|pad|unk)>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\b(?:in comparison with|compared (?:to|with))\s+(?:the\s+)?(?:prior|previous\s+)?(?:study|radiograph|exam|examination)(?:\s+of\s+[^,.]*)?\s*[,.]?",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
     text = re.sub(r"\s*\n+\s*", ". ", text)
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"\s*,\s*\.", ",", text)
@@ -25,12 +32,13 @@ def format_clinical_report(raw_text: str) -> str:
         "there is", "there are", "bony structures", "no pneumothorax",
         "no pleural", "no focal", "no acute", "cardiomediastinal",
         "lungs are", "lungs", "heart", "mediastinum", "lung", "pleural",
-        "osseous", "pneumothorax", "pneumonia", "cardiomegaly", "findings",
+        "osseous", "pneumothorax", "pneumonia", "cardiomegaly",
         "consolidation", "edema", "effusion", "acute", "impression",
     )
     connectors = {
         "no", "or", "nor", "without", "for", "of", "with", "and",
-        "the", "a", "an", "is", "are",
+        "the", "a", "an", "is", "are", "demonstrate", "demonstrates",
+        "show", "shows", "reveal", "reveals", "indicate", "suggest", "suggests",
     }
     compound_predecessors = {
         "heart": {"normal", "enlarged", "large"},
@@ -39,6 +47,7 @@ def format_clinical_report(raw_text: str) -> str:
         "edema": {"pulmonary"},
         "effusion": {"pleural"},
         "pneumothorax": {"small", "large", "left", "right"},
+        "acute": {"no"},
     }
     insertion_points = set()
     for landmark in sorted(landmarks, key=len, reverse=True):
@@ -87,7 +96,7 @@ def format_clinical_report(raw_text: str) -> str:
     dangling = {
         "and", "or", "nor", "with", "of", "in", "to", "from", "the", "a", "an",
         "has", "have", "had", "is", "are", "was", "were", "be", "been", "being",
-        "do", "does", "did", "without",
+        "do", "does", "did", "without", "such", "as", "yet", "although", "however",
     }
     sentences = []
     for sentence in (part.strip(" .") for part in text.split(".")):
